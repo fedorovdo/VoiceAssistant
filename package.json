@@ -12,7 +12,8 @@
     "dev:desktop": "npm run dev -w @voiceassistant/desktop",
     "build": "npm run build -w @voiceassistant/shared && npm run build -w @voiceassistant/backend && npm run build -w @voiceassistant/desktop",
     "build:backend": "npm run build -w @voiceassistant/backend",
-    "build:desktop": "npm run build -w @voiceassistant/desktop"
+    "build:desktop": "npm run build -w @voiceassistant/desktop",
+    "test:backend": "npm run test -w @voiceassistant/backend"
   },
   "engines": {
     "node": ">=20"

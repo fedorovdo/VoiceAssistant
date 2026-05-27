@@ -7,12 +7,14 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
+    "test": "tsx --test src/**/*.test.ts",
     "start": "node dist/server.js"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
     "@voiceassistant/shared": "*",
-    "fastify": "^4.26.2"
+    "fastify": "^4.26.2",
+    "openai": "^6.39.0"
   },
   "devDependencies": {
     "@types/node": "^20.12.12",

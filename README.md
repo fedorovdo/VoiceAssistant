@@ -39,10 +39,37 @@ Example request:
 
 ```json
 {
-  "text": "Из чего состоит Kubernetes?",
-  "mode": "interview"
+  "text": "Что такое Kubernetes?",
+  "mode": "interview",
+  "model": "gpt-4.1-mini",
+  "apiKey": "optional user key"
 }
 ```
+
+## Mock Mode
+
+Mock mode is the default when no API key is provided. Leave the API key field empty in desktop settings, or call the backend without `apiKey` and without `OPENAI_API_KEY`.
+
+```json
+{
+  "text": "Как работает Kubernetes?",
+  "mode": "short"
+}
+```
+
+This returns a deterministic local mock answer and does not contact OpenAI.
+
+## Real OpenAI Mode
+
+To use real answer generation, provide an OpenAI API key in the desktop settings or set `OPENAI_API_KEY` in your local environment before starting the backend.
+
+Recommended first model value:
+
+```text
+gpt-4.1-mini
+```
+
+The backend uses the official OpenAI npm package and the Responses API. Do not commit real API keys. Keep `.env` local and use `.env.example` only as a template.
 
 ## Run Desktop
 
@@ -52,14 +79,23 @@ Start the backend first, then run:
 npm run dev:desktop
 ```
 
-For the first MVP, speech recognition is simulated: type recognized text in the top panel and click **Ask**. The mock assistant answer appears in the bottom panel.
+For this MVP, speech recognition is simulated: type recognized text in the top panel and click **Ask**. The answer appears in the bottom panel.
+
+Settings are saved in browser `localStorage` for the desktop renderer.
+
+## Tests
+
+Backend tests do not require a real OpenAI key.
+
+```bash
+npm run test:backend
+```
 
 ## MVP Roadmap
 
 1. Add microphone capture in the desktop app.
 2. Add replaceable speech-to-text provider.
-3. Connect the OpenAI provider behind the existing `AiProvider` interface.
-4. Add answer streaming for lower perceived latency.
-5. Persist settings locally and pass selected model/language to the backend.
-6. Improve technical question detection with scoring and language-aware rules.
-7. Package the Windows desktop app for local installation.
+3. Add answer streaming for lower perceived latency.
+4. Persist richer settings with an Electron-safe storage layer.
+5. Improve technical question detection with scoring and language-aware rules.
+6. Package the Windows desktop app for local installation.

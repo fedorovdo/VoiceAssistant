@@ -19,8 +19,6 @@ export function buildApp() {
     origin: true
   });
 
-  const aiProvider = createAiProvider();
-
   app.get("/health", async () => ({
     status: "ok",
     service: "voiceassistant-backend"
@@ -30,6 +28,8 @@ export function buildApp() {
     "/api/assistant/answer",
     async (request, reply) => {
       const { text, mode } = request.body ?? {};
+      const model = normalizeOptionalString(request.body?.model);
+      const apiKey = normalizeOptionalString(request.body?.apiKey);
 
       if (typeof text !== "string" || text.trim().length === 0) {
         return reply.status(400).send({ error: "Field 'text' is required." });
@@ -46,14 +46,42 @@ export function buildApp() {
         };
       }
 
-      const answer = await aiProvider.answer({
-        text: detection.normalizedText,
-        mode
-      });
+      try {
+        const aiProvider = createAiProvider({ apiKey, model });
+        const answer = await aiProvider.answer({
+          text: detection.normalizedText,
+          mode
+        });
 
-      return { answer };
+        return { answer };
+      } catch (error) {
+        request.log.warn({ err: sanitizeErrorForLogs(error) }, "assistant provider failed");
+        return reply.status(502).send({
+          error: error instanceof Error ? error.message : "Assistant provider failed."
+        });
+      }
     }
   );
 
   return app;
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function sanitizeErrorForLogs(error: unknown) {
+  if (!(error instanceof Error)) {
+    return { message: "Unknown provider error" };
+  }
+
+  return {
+    name: error.name,
+    message: error.message
+  };
 }

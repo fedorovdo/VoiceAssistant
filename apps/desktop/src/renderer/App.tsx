@@ -14,6 +14,7 @@ const defaultSettings: DesktopSettings = {
   answerMode: "interview"
 };
 
+const settingsStorageKey = "voiceassistant.settings";
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8787";
 
 export function App() {
@@ -21,7 +22,7 @@ export function App() {
   const [answer, setAnswer] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState<DesktopSettings>(defaultSettings);
+  const [settings, setSettings] = useState<DesktopSettings>(loadSettings);
   const [isAsking, setIsAsking] = useState(false);
   const [error, setError] = useState("");
 
@@ -38,6 +39,7 @@ export function App() {
     setError("");
 
     try {
+      setAnswer("");
       const response = await fetch(`${backendUrl}/api/assistant/answer`, {
         method: "POST",
         headers: {
@@ -45,7 +47,9 @@ export function App() {
         },
         body: JSON.stringify({
           text: recognizedText,
-          mode: settings.answerMode
+          mode: settings.answerMode,
+          model: settings.model,
+          apiKey: settings.apiKey
         })
       });
 
@@ -65,6 +69,7 @@ export function App() {
 
   function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
     setIsSettingsOpen(false);
   }
 
@@ -125,7 +130,7 @@ export function App() {
           </div>
           {error ? <div className="error-message">{error}</div> : null}
           <pre className={answer ? "answer-text" : "answer-text answer-empty"}>
-            {answer || "Ответ появится здесь после нажатия Ask."}
+            {isAsking ? "Жду ответ от ассистента..." : answer || "Ответ появится здесь после нажатия Ask."}
           </pre>
         </div>
       </section>
@@ -198,4 +203,28 @@ export function App() {
       ) : null}
     </main>
   );
+}
+
+function loadSettings(): DesktopSettings {
+  const rawSettings = localStorage.getItem(settingsStorageKey);
+  if (!rawSettings) {
+    return defaultSettings;
+  }
+
+  try {
+    const parsed = JSON.parse(rawSettings) as Partial<DesktopSettings>;
+
+    return {
+      ...defaultSettings,
+      ...parsed,
+      answerMode: isAnswerMode(parsed.answerMode) ? parsed.answerMode : defaultSettings.answerMode,
+      language: parsed.language === "en" || parsed.language === "ru" ? parsed.language : defaultSettings.language
+    };
+  } catch {
+    return defaultSettings;
+  }
+}
+
+function isAnswerMode(value: unknown): value is AnswerMode {
+  return value === "short" || value === "interview" || value === "learning";
 }

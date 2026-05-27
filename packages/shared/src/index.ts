@@ -5,6 +5,8 @@ export type AppLanguage = "ru" | "en";
 export interface AssistantAnswerRequest {
   text: string;
   mode: AnswerMode;
+  model?: string;
+  apiKey?: string;
 }
 
 export interface AssistantAnswerResponse {
