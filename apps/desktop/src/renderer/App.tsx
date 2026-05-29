@@ -3,7 +3,8 @@ import { Mic, Settings, Square, Play, Send, X, Trash2 } from "lucide-react";
 import type {
   AnswerMode,
   AssistantAnswerResponse,
-  DesktopSettings
+  DesktopSettings,
+  SpeechToTextProviderId
 } from "@voiceassistant/shared";
 import { createSpeechToTextProvider } from "./speech/createSpeechToTextProvider.js";
 import type { RecognitionStatus } from "./speech/SpeechToTextProvider.js";
@@ -13,36 +14,54 @@ const defaultSettings: DesktopSettings = {
   model: "gpt-4.1-mini",
   language: "ru",
   audioInputDevice: "Default microphone",
-  answerMode: "interview"
+  answerMode: "interview",
+  speechToTextProvider: "mock"
 };
 
 const settingsStorageKey = "voiceassistant.settings";
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8787";
 
 export function App() {
-  const speechToTextProvider = useMemo(() => createSpeechToTextProvider(), []);
+  const [settings, setSettings] = useState<DesktopSettings>(loadSettings);
+  const speechToTextProvider = useMemo(
+    () => createSpeechToTextProvider(settings.speechToTextProvider),
+    [settings.speechToTextProvider]
+  );
   const [recognizedText, setRecognizedText] = useState("\u0418\u0437 \u0447\u0435\u0433\u043e \u0441\u043e\u0441\u0442\u043e\u0438\u0442 Kubernetes?");
   const [answer, setAnswer] = useState("");
   const [recognitionStatus, setRecognitionStatus] = useState<RecognitionStatus>("stopped");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState<DesktopSettings>(loadSettings);
   const [isAsking, setIsAsking] = useState(false);
   const [error, setError] = useState("");
+  const [recognitionMessage, setRecognitionMessage] = useState("");
   const isListening = recognitionStatus === "listening";
 
   const statusText = useMemo(() => {
+    if (settings.speechToTextProvider === "disabled") {
+      return "Disabled";
+    }
+
     if (isListening) {
       return "Listening";
     }
 
     return "Stopped";
-  }, [isListening]);
+  }, [isListening, settings.speechToTextProvider]);
 
   useEffect(() => {
     return () => {
-      speechToTextProvider.stop();
+      speechToTextProvider?.stop();
     };
   }, [speechToTextProvider]);
+
+  useEffect(() => {
+    if (settings.speechToTextProvider === "disabled") {
+      speechToTextProvider?.stop();
+      setRecognitionStatus("stopped");
+    } else {
+      setRecognitionMessage("");
+    }
+  }, [settings.speechToTextProvider, speechToTextProvider]);
 
   async function askAssistant() {
     setIsAsking(true);
@@ -79,6 +98,13 @@ export function App() {
 
   function startListening() {
     setError("");
+    if (!speechToTextProvider) {
+      setRecognitionStatus("stopped");
+      setRecognitionMessage("Speech-to-text provider is disabled in settings.");
+      return;
+    }
+
+    setRecognitionMessage("");
     speechToTextProvider.start({
       onResult: (result) => {
         if (!result.isFinal) {
@@ -92,7 +118,7 @@ export function App() {
   }
 
   function stopListening() {
-    speechToTextProvider.stop();
+    speechToTextProvider?.stop();
   }
 
   function clearRecognizedText() {
@@ -162,6 +188,7 @@ export function App() {
             onChange={(event) => setRecognizedText(event.target.value)}
             placeholder="\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0438\u043b\u0438 \u0432\u0441\u0442\u0430\u0432\u044c\u0442\u0435 \u0440\u0430\u0441\u043f\u043e\u0437\u043d\u0430\u043d\u043d\u044b\u0439 \u0442\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u0432\u043e\u043f\u0440\u043e\u0441"
           />
+          {recognitionMessage ? <div className="recognition-message">{recognitionMessage}</div> : null}
           <div className="actions-row">
             <div className="input-device">
               <Mic size={16} />
@@ -228,6 +255,17 @@ export function App() {
             </label>
 
             <label>
+              Speech-to-text provider
+              <select
+                value={settings.speechToTextProvider}
+                onChange={(event) => setSettings({ ...settings, speechToTextProvider: event.target.value as SpeechToTextProviderId })}
+              >
+                <option value="disabled">Disabled</option>
+                <option value="mock">Mock</option>
+              </select>
+            </label>
+
+            <label>
               Language
               <select
                 value={settings.language}
@@ -271,7 +309,10 @@ function loadSettings(): DesktopSettings {
       ...defaultSettings,
       ...parsed,
       answerMode: isAnswerMode(parsed.answerMode) ? parsed.answerMode : defaultSettings.answerMode,
-      language: parsed.language === "en" || parsed.language === "ru" ? parsed.language : defaultSettings.language
+      language: parsed.language === "en" || parsed.language === "ru" ? parsed.language : defaultSettings.language,
+      speechToTextProvider: isSpeechToTextProvider(parsed.speechToTextProvider)
+        ? parsed.speechToTextProvider
+        : defaultSettings.speechToTextProvider
     };
   } catch {
     return defaultSettings;
@@ -280,6 +321,10 @@ function loadSettings(): DesktopSettings {
 
 function isAnswerMode(value: unknown): value is AnswerMode {
   return value === "short" || value === "interview" || value === "learning";
+}
+
+function isSpeechToTextProvider(value: unknown): value is SpeechToTextProviderId {
+  return value === "disabled" || value === "mock";
 }
 
 function appendRecognizedText(currentText: string, recognizedPhrase: string): string {
