@@ -79,7 +79,7 @@ Start the backend first, then run:
 npm run dev:desktop
 ```
 
-For this MVP, speech recognition is simulated: type recognized text in the top panel and click **Ask**. The answer appears in the bottom panel.
+For this MVP, speech recognition uses a local mock provider: click **Start** to simulate recognized technical phrases, or type recognized text in the top panel manually. Click **Ask** to send the recognized text to the backend. The answer appears in the bottom panel.
 
 Settings are saved in browser `localStorage` for the desktop renderer.
 

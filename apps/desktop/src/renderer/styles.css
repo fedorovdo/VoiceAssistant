@@ -63,7 +63,8 @@ button {
 .toolbar,
 .actions-row,
 .input-device,
-.panel-header {
+.panel-header,
+.recognition-controls {
   display: flex;
   align-items: center;
 }
@@ -126,6 +127,12 @@ button {
   border-bottom: 1px solid #edf0f4;
 }
 
+.recognition-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .panel h2 {
   font-size: 17px;
   line-height: 1.3;
@@ -172,7 +179,8 @@ textarea {
 
 .control-button,
 .ask-button,
-.save-button {
+.save-button,
+.secondary-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -190,6 +198,14 @@ textarea {
   padding: 0 16px;
 }
 
+.secondary-button {
+  min-width: 102px;
+  padding: 0 14px;
+  border: 1px solid #cfd8e3;
+  color: #293548;
+  background: #ffffff;
+}
+
 .control-button.stop {
   background: #b42318;
 }
@@ -199,6 +215,8 @@ textarea {
   padding: 0 18px;
 }
 
+.control-button:disabled,
+.secondary-button:disabled,
 .ask-button:disabled {
   cursor: default;
   opacity: 0.65;
