@@ -1,10 +1,12 @@
-import { FormEvent, useMemo, useState } from "react";
-import { Mic, Settings, Square, Play, Send, X } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Mic, Settings, Square, Play, Send, X, Trash2 } from "lucide-react";
 import type {
   AnswerMode,
   AssistantAnswerResponse,
   DesktopSettings
 } from "@voiceassistant/shared";
+import { createSpeechToTextProvider } from "./speech/createSpeechToTextProvider.js";
+import type { RecognitionStatus } from "./speech/SpeechToTextProvider.js";
 
 const defaultSettings: DesktopSettings = {
   apiKey: "",
@@ -18,13 +20,15 @@ const settingsStorageKey = "voiceassistant.settings";
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8787";
 
 export function App() {
-  const [recognizedText, setRecognizedText] = useState("Из чего состоит Kubernetes?");
+  const speechToTextProvider = useMemo(() => createSpeechToTextProvider(), []);
+  const [recognizedText, setRecognizedText] = useState("\u0418\u0437 \u0447\u0435\u0433\u043e \u0441\u043e\u0441\u0442\u043e\u0438\u0442 Kubernetes?");
   const [answer, setAnswer] = useState("");
-  const [isListening, setIsListening] = useState(false);
+  const [recognitionStatus, setRecognitionStatus] = useState<RecognitionStatus>("stopped");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<DesktopSettings>(loadSettings);
   const [isAsking, setIsAsking] = useState(false);
   const [error, setError] = useState("");
+  const isListening = recognitionStatus === "listening";
 
   const statusText = useMemo(() => {
     if (isListening) {
@@ -33,6 +37,12 @@ export function App() {
 
     return "Stopped";
   }, [isListening]);
+
+  useEffect(() => {
+    return () => {
+      speechToTextProvider.stop();
+    };
+  }, [speechToTextProvider]);
 
   async function askAssistant() {
     setIsAsking(true);
@@ -67,6 +77,28 @@ export function App() {
     }
   }
 
+  function startListening() {
+    setError("");
+    speechToTextProvider.start({
+      onResult: (result) => {
+        if (!result.isFinal) {
+          return;
+        }
+
+        setRecognizedText((currentText) => appendRecognizedText(currentText, result.text));
+      },
+      onStatusChange: setRecognitionStatus
+    });
+  }
+
+  function stopListening() {
+    speechToTextProvider.stop();
+  }
+
+  function clearRecognizedText() {
+    setRecognizedText("");
+  }
+
   function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
@@ -95,19 +127,40 @@ export function App() {
               <h2>Recognized question</h2>
               <p>Microphone input is simulated for the MVP.</p>
             </div>
-            <button
-              className={isListening ? "control-button stop" : "control-button"}
-              type="button"
-              onClick={() => setIsListening((value) => !value)}
-            >
-              {isListening ? <Square size={18} /> : <Play size={18} />}
-              {isListening ? "Stop" : "Start"}
-            </button>
+            <div className="recognition-controls">
+              <button
+                className="control-button"
+                type="button"
+                onClick={startListening}
+                disabled={isListening}
+              >
+                <Play size={18} />
+                Start
+              </button>
+              <button
+                className="control-button stop"
+                type="button"
+                onClick={stopListening}
+                disabled={!isListening}
+              >
+                <Square size={18} />
+                Stop
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={clearRecognizedText}
+                disabled={recognizedText.length === 0}
+              >
+                <Trash2 size={18} />
+                Clear
+              </button>
+            </div>
           </div>
           <textarea
             value={recognizedText}
             onChange={(event) => setRecognizedText(event.target.value)}
-            placeholder="Введите или вставьте распознанный технический вопрос"
+            placeholder="\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0438\u043b\u0438 \u0432\u0441\u0442\u0430\u0432\u044c\u0442\u0435 \u0440\u0430\u0441\u043f\u043e\u0437\u043d\u0430\u043d\u043d\u044b\u0439 \u0442\u0435\u0445\u043d\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u0432\u043e\u043f\u0440\u043e\u0441"
           />
           <div className="actions-row">
             <div className="input-device">
@@ -130,7 +183,7 @@ export function App() {
           </div>
           {error ? <div className="error-message">{error}</div> : null}
           <pre className={answer ? "answer-text" : "answer-text answer-empty"}>
-            {isAsking ? "Жду ответ от ассистента..." : answer || "Ответ появится здесь после нажатия Ask."}
+            {isAsking ? "\u0416\u0434\u0443 \u043e\u0442\u0432\u0435\u0442 \u043e\u0442 \u0430\u0441\u0441\u0438\u0441\u0442\u0435\u043d\u0442\u0430..." : answer || "\u041e\u0442\u0432\u0435\u0442 \u043f\u043e\u044f\u0432\u0438\u0442\u0441\u044f \u0437\u0434\u0435\u0441\u044c \u043f\u043e\u0441\u043b\u0435 \u043d\u0430\u0436\u0430\u0442\u0438\u044f Ask."}
           </pre>
         </div>
       </section>
@@ -227,4 +280,9 @@ function loadSettings(): DesktopSettings {
 
 function isAnswerMode(value: unknown): value is AnswerMode {
   return value === "short" || value === "interview" || value === "learning";
+}
+
+function appendRecognizedText(currentText: string, recognizedPhrase: string): string {
+  const trimmedText = currentText.trim();
+  return trimmedText.length > 0 ? `${trimmedText}\n${recognizedPhrase}` : recognizedPhrase;
 }
