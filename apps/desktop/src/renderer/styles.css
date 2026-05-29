@@ -251,6 +251,14 @@ textarea {
   background: #fff1f1;
 }
 
+.recognition-message {
+  padding: 10px 20px;
+  border-top: 1px solid #edf0f4;
+  color: #5d6b7f;
+  background: #f8fafc;
+  font-size: 14px;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

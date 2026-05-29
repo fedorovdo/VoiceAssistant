@@ -2,6 +2,8 @@ export type AnswerMode = "short" | "interview" | "learning";
 
 export type AppLanguage = "ru" | "en";
 
+export type SpeechToTextProviderId = "disabled" | "mock";
+
 export interface AssistantAnswerRequest {
   text: string;
   mode: AnswerMode;
@@ -19,4 +21,5 @@ export interface DesktopSettings {
   language: AppLanguage;
   audioInputDevice: string;
   answerMode: AnswerMode;
+  speechToTextProvider: SpeechToTextProviderId;
 }
