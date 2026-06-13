@@ -1,8 +1,10 @@
+import { expandedKnowledgeCards } from "./knowledgeCardsExpanded.js";
+
 export interface KnowledgeCard {
   id: string;
   title: string;
   aliases: string[];
-  category: "linux" | "docker" | "kubernetes" | "networking" | "active-directory";
+  category: "linux" | "docker" | "kubernetes" | "networking" | "active-directory" | "proxmox" | "git";
   shortExplanation: string;
   bullets: string[];
   commands: string[];
@@ -15,7 +17,7 @@ const baseKnowledgeCards: KnowledgeCard[] = [
   card("linux-netstat", "Команда netstat", ["netstat command", "команда netstat", "netstat -tulpn"], "linux", "Классическая утилита для сетевых соединений и таблиц маршрутизации; на новых Linux часто заменена на ss.", ["Полезна на старых системах и в знакомых runbook.", "Пакет net-tools может быть не установлен по умолчанию."], ["sudo netstat -tulpn", "netstat -rn"], ["ss", "routing", "port"]),
   card("linux-journalctl", "journalctl", ["journalctl command", "команда journalctl", "systemd logs", "логи systemd", "journalctl -u"], "linux", "Читает системный журнал systemd и логи служб.", ["Фильтрует записи по unit, времени и приоритету.", "Ключ -f показывает новые записи в реальном времени."], ["journalctl -u nginx --since today", "journalctl -f", "journalctl -p err -b"], ["systemctl", "logs", "systemd"]),
   card("linux-systemctl", "systemctl", ["systemctl command", "команда systemctl", "systemd service", "управление сервисами linux"], "linux", "Управляет службами и другими unit-объектами systemd.", ["Основные действия: status, start, stop, restart, enable.", "enable включает автозапуск, но не обязательно запускает сервис прямо сейчас."], ["systemctl status nginx", "sudo systemctl restart nginx", "sudo systemctl enable --now nginx"], ["journalctl", "systemd", "service"]),
-  card("linux-df", "df -h", ["df -h", "df -h command", "команда df -h", "команда linux посмотреть место на диске", "как посмотреть место на диске", "проверить место на диске", "проверить место на диске linux", "disk space linux"], "linux", "Показывает использование файловых систем в удобных для чтения единицах.", ["Смотрите столбцы Size, Used, Avail и Use%.", "df показывает файловые системы, а du помогает найти крупные каталоги."], ["df -h", "du -sh /var/* | sort -h"], ["disk", "filesystem", "du"]),
+  card("linux-df", "df -h", ["df -h", "df -h command", "команда df -h", "команда linux посмотреть место на диске", "как посмотреть место на диске", "как проверить свободное место", "проверить свободное место", "проверить место на диске", "проверить место на диске linux", "disk space linux"], "linux", "Показывает использование файловых систем в удобных для чтения единицах.", ["Смотрите столбцы Size, Used, Avail и Use%.", "df показывает файловые системы, а du помогает найти крупные каталоги."], ["df -h", "du -sh /var/* | sort -h"], ["disk", "filesystem", "du"]),
   card("linux-free", "free -h", ["free -h command", "команда free -h", "память linux", "linux memory usage"], "linux", "Показывает использование оперативной памяти и swap в Linux.", ["Поле available обычно полезнее, чем просто free.", "Linux использует свободную память под кеш и освобождает ее при необходимости."], ["free -h", "watch -n 2 free -h"], ["memory", "swap", "linux"]),
 
   card("docker-image", "Docker image", ["docker image", "образ docker", "docker образ", "что такое docker image"], "docker", "Неизменяемый шаблон с приложением, зависимостями и метаданными для запуска контейнеров.", ["Image строится слоями.", "Один image может запускать много контейнеров.", "Обычно хранится в registry."], ["docker image ls", "docker inspect IMAGE"], ["docker-container", "dockerfile", "registry"]),
@@ -65,7 +67,7 @@ const practicalKnowledgeCards: KnowledgeCard[] = [
   card("linux-fstab", "Проверка /etc/fstab", ["fstab", "/etc/fstab", "проверить fstab", "настроить автомонтирование linux", "check fstab", "persistent mount linux"], "linux", "Файл /etc/fstab описывает файловые системы, которые должны монтироваться автоматически.", ["Предпочтительно использовать UUID вместо /dev/sdX.", "Проверяйте конфигурацию командой mount -a до перезагрузки."], ["cat /etc/fstab", "lsblk -f", "sudo mount -a"], ["mount", "uuid", "filesystem"]),
 
   card("docker-images", "Список Docker images", ["docker images", "docker image ls", "список docker образов", "показать docker images", "list docker images"], "docker", "Показывает локальные Docker images, их теги, ID, дату и размер.", ["Dangling images не имеют тега и часто остаются после сборок.", "Удаляйте image только когда он не нужен контейнерам."], ["docker images", "docker image ls", "docker image prune"], ["docker image", "docker build", "registry"]),
-  card("docker-exec", "Выполнение команды в контейнере: docker exec", ["docker exec", "зайти в docker контейнер", "выполнить команду в контейнере", "shell in container", "execute in docker container"], "docker", "Запускает новый процесс внутри уже работающего контейнера.", ["-it нужен для интерактивного терминала.", "В минимальных images может быть sh, но не bash."], ["docker exec -it CONTAINER sh", "docker exec CONTAINER env"], ["docker container", "docker ps", "shell"]),
+  card("docker-exec", "Выполнение команды в контейнере: docker exec", ["docker exec", "как зайти в контейнер", "зайти в контейнер", "зайти в docker контейнер", "выполнить команду в контейнере", "shell in container", "execute in docker container"], "docker", "Запускает новый процесс внутри уже работающего контейнера.", ["-it нужен для интерактивного терминала.", "В минимальных images может быть sh, но не bash."], ["docker exec -it CONTAINER sh", "docker exec CONTAINER env"], ["docker container", "docker ps", "shell"]),
   card("docker-inspect", "Подробности объекта: docker inspect", ["docker inspect", "посмотреть настройки контейнера", "inspect docker container", "docker container details"], "docker", "Возвращает подробную JSON-конфигурацию контейнера, image, volume или network.", ["Полезен для IP, mounts, environment и restart policy.", "--format позволяет извлечь одно поле."], ["docker inspect CONTAINER", "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' CONTAINER"], ["docker container", "docker network", "docker volume"]),
   card("docker-compose-up", "Запуск Compose-проекта: docker compose up", ["docker compose up", "запустить docker compose", "compose up", "start compose project"], "docker", "Создает и запускает сервисы, сети и volumes из compose.yaml.", ["-d запускает проект в фоне.", "--build пересобирает images перед запуском."], ["docker compose up -d", "docker compose up -d --build"], ["docker compose down", "compose", "docker service"]),
   card("docker-compose-down", "Остановка Compose-проекта: docker compose down", ["docker compose down", "остановить docker compose", "compose down", "stop compose project"], "docker", "Останавливает и удаляет контейнеры и сети текущего Compose-проекта.", ["Volumes по умолчанию сохраняются.", "Ключ -v удаляет named volumes и данные в них."], ["docker compose down", "docker compose down -v"], ["docker compose up", "compose", "docker volume"]),
@@ -95,17 +97,32 @@ const practicalKnowledgeCards: KnowledgeCard[] = [
   card("ad-dns-records", "Проверка DNS-записей Active Directory", ["проверить dns записи ad", "check ad dns records", "ad srv records", "dns records active directory"], "active-directory", "Проверяет SRV-записи, по которым клиенты находят LDAP, Kerberos и контроллеры домена.", ["Клиент домена должен использовать внутренний DNS AD.", "Отсутствующие SRV-записи часто указывают на проблемы DNS или Netlogon."], ["nslookup -type=SRV _ldap._tcp.dc._msdcs.DOMAIN", "Resolve-DnsName -Type SRV _kerberos._tcp.DOMAIN", "dcdiag /test:dns"], ["dns in ad", "domain controller", "dcdiag"]),
   card("ad-gpupdate", "Обновление групповых политик: gpupdate", ["gpupdate", "gpupdate force", "обновить групповые политики", "refresh group policy"], "active-directory", "Принудительно обновляет пользовательские и компьютерные Group Policy на Windows-клиенте.", ["/force повторно применяет все параметры.", "Некоторые политики требуют выхода пользователя или перезагрузки."], ["gpupdate /force", "gpupdate /target:computer /force"], ["group policy", "gpresult", "gpo"]),
   card("ad-gpresult", "Проверка примененных политик: gpresult", ["gpresult", "gpresult command", "какие gpo применились", "check applied group policy", "resultant set of policy"], "active-directory", "Показывает примененные GPO и итоговые параметры для пользователя или компьютера.", ["/r дает краткий отчет.", "/h создает удобный HTML-отчет для анализа."], ["gpresult /r", "gpresult /h C:\\Temp\\gpresult.html"], ["group policy", "gpupdate", "gpo"]),
-  card("ad-dcdiag", "Диагностика контроллера домена: dcdiag", ["dcdiag", "dcdiag command", "диагностика контроллера домена", "test domain controller health"], "active-directory", "Запускает набор проверок состояния AD DS, DNS, репликации и служб Domain Controller.", ["Запускайте от администратора на DC или с подходящими RSAT.", "Ошибку лучше проверять вместе с Event Viewer и repadmin."], ["dcdiag", "dcdiag /v", "dcdiag /test:dns"], ["domain controller", "repadmin", "dns in ad"]),
+  card("ad-dcdiag", "Диагностика контроллера домена: dcdiag", ["dcdiag", "dcdiag command", "dcdiag проверить контроллер домена", "диагностика контроллера домена", "test domain controller health"], "active-directory", "Запускает набор проверок состояния AD DS, DNS, репликации и служб Domain Controller.", ["Запускайте от администратора на DC или с подходящими RSAT.", "Ошибку лучше проверять вместе с Event Viewer и repadmin."], ["dcdiag", "dcdiag /v", "dcdiag /test:dns"], ["domain controller", "repadmin", "dns in ad"]),
   card("ad-repadmin", "Проверка репликации AD: repadmin", ["repadmin", "repadmin command", "проверить репликацию ad", "active directory replication status"], "active-directory", "Показывает состояние репликации между контроллерами домена и последние ошибки.", ["/replsummary дает сводку по всем DC.", "/showrepl показывает входящие партнеры выбранного DC."], ["repadmin /replsummary", "repadmin /showrepl", "repadmin /syncall /AdeP"], ["domain controller", "dcdiag", "replication"]),
-  card("ad-fsmo", "Проверка FSMO-ролей", ["fsmo roles", "проверить fsmo роли", "check fsmo roles", "netdom query fsmo"], "active-directory", "Показывает, какие Domain Controller владеют пятью специальными FSMO-ролями леса и домена.", ["Роли включают Schema Master, Domain Naming Master, RID, PDC Emulator и Infrastructure Master.", "Знать владельцев важно при обслуживании или отказе DC."], ["netdom query fsmo", "Get-ADForest | Select SchemaMaster,DomainNamingMaster", "Get-ADDomain | Select RIDMaster,PDCEmulator,InfrastructureMaster"], ["domain controller", "active directory", "replication"]),
+  card("ad-fsmo", "Проверка FSMO-ролей", ["fsmo roles", "как проверить fsmo", "проверить fsmo", "проверить fsmo роли", "check fsmo roles", "netdom query fsmo"], "active-directory", "Показывает, какие Domain Controller владеют пятью специальными FSMO-ролями леса и домена.", ["Роли включают Schema Master, Domain Naming Master, RID, PDC Emulator и Infrastructure Master.", "Знать владельцев важно при обслуживании или отказе DC."], ["netdom query fsmo", "Get-ADForest | Select SchemaMaster,DomainNamingMaster", "Get-ADDomain | Select RIDMaster,PDCEmulator,InfrastructureMaster"], ["domain controller", "active directory", "replication"]),
   card("ad-gpo-basics", "Основы GPO", ["gpo basics", "основы gpo", "как работает групповая политика", "group policy basics"], "active-directory", "GPO централизованно применяет настройки к пользователям и компьютерам в site, domain и OU.", ["Порядок обработки обычно LSDOU: Local, Site, Domain, OU.", "Security filtering и WMI filters ограничивают область применения."], ["Get-GPO -All", "gpresult /h C:\\Temp\\gpresult.html", "rsop.msc"], ["group policy", "gpupdate", "gpresult"])
 ];
 
-export const knowledgeCards: KnowledgeCard[] = [...baseKnowledgeCards, ...practicalKnowledgeCards];
+export const knowledgeCards: KnowledgeCard[] = [
+  ...baseKnowledgeCards,
+  ...practicalKnowledgeCards,
+  ...expandedKnowledgeCards
+];
 
-const ambiguousAliases = new Set(["pod", "под", "log", "logs", "service", "сервис", "ss", "free"]);
-const intentMarkers = ["что такое", "как работает", "для чего", "как проверить", "как настроить", "команда", "command", "explain", "check", "show", "list"];
-const contextMarkers = ["linux", "docker", "container", "контейнер", "kubernetes", "k8s", "kubectl", "systemd", "порт", "port", "memory", "память"];
+const ambiguousAliases = new Set([
+  "pod", "под", "log", "logs", "service", "сервис", "container", "контейнер",
+  "group", "группа", "port", "порт", "ss", "free"
+]);
+const intentMarkers = [
+  "что такое", "как работает", "для чего", "как проверить", "как настроить", "как посмотреть",
+  "как найти", "не работает", "не запускается", "не стартует", "ошибка", "команда", "command",
+  "explain", "check", "show", "list", "troubleshoot"
+];
+const contextMarkers = [
+  "linux", "systemd", "docker", "compose", "kubernetes", "k8s", "kubectl", "proxmox", "pve",
+  "active directory", " ad ", "windows", "powershell", "dns", "dhcp", "tcp", "udp", "firewall",
+  "network", "сеть", "memory", "память"
+];
 
 export function findKnowledgeCards(text: string): KnowledgeCard[] {
   const normalizedText = normalize(text);
@@ -128,7 +145,7 @@ function scoreCard(knowledgeCard: KnowledgeCard, text: string): number {
     if (ambiguousAliases.has(candidate) && !hasTechnicalContext(text, candidate)) continue;
 
     const exactBonus = text === candidate ? 40 : 0;
-    const titleBonus = candidate === normalize(knowledgeCard.title) ? 20 : 0;
+    const titleBonus = candidate === normalize(knowledgeCard.title) && candidate.length >= 6 ? 12 : 0;
     score = Math.max(score, candidate.length + exactBonus + titleBonus);
   }
 
