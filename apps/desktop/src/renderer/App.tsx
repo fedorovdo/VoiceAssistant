@@ -5,10 +5,11 @@ import type {
   AppLanguage,
   AssistantAnswerResponse,
   DesktopSettings,
+  KnowledgeCard,
   SpeechToTextProviderId,
   WorkMode
 } from "@voiceassistant/shared";
-import { classifyTechnicalFragment } from "@voiceassistant/shared";
+import { classifyTechnicalFragment, findKnowledgeCards } from "@voiceassistant/shared";
 import { createTranslator } from "./i18n.js";
 import { createSpeechToTextProvider } from "./speech/createSpeechToTextProvider.js";
 import type { RecognitionStatus } from "./speech/SpeechToTextProvider.js";
@@ -37,6 +38,7 @@ type DeviceStatus = "permission_hint" | "unavailable" | "none" | "found" | "erro
 type PermissionState = "idle" | "requesting" | "success" | "error";
 type PermissionMessage = "unavailable" | "granted" | "denied" | "not_found" | "error" | undefined;
 type LiveFragmentSource = "mock" | "microphone";
+type AnswerSource = "local" | "gpt" | undefined;
 
 export function App() {
   const [settings, setSettings] = useState<DesktopSettings>(loadSettings);
@@ -47,6 +49,8 @@ export function App() {
   );
   const [recognizedText, setRecognizedText] = useState("");
   const [answer, setAnswer] = useState("");
+  const [answerSource, setAnswerSource] = useState<AnswerSource>();
+  const [localAnswerCards, setLocalAnswerCards] = useState<KnowledgeCard[]>([]);
   const [recognitionStatus, setRecognitionStatus] = useState<RecognitionStatus>("stopped");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAsking, setIsAsking] = useState(false);
@@ -121,7 +125,18 @@ export function App() {
     }
   }, []);
 
-  const requestAnswer = useCallback(async (text: string, workMode: WorkMode): Promise<boolean> => {
+  const showLocalAnswer = useCallback((cards: KnowledgeCard[]) => {
+    setAnswer(formatKnowledgeCards(cards, settings.answerLanguage));
+    setLocalAnswerCards(cards);
+    setAnswerSource("local");
+    setError("");
+  }, [settings.answerLanguage]);
+
+  const requestAnswer = useCallback(async (
+    text: string,
+    workMode: WorkMode,
+    preserveLocalAnswer = false
+  ): Promise<boolean> => {
     const trimmedText = text.trim();
     if (!trimmedText || requestInFlightRef.current) {
       return false;
@@ -130,6 +145,10 @@ export function App() {
     requestInFlightRef.current = true;
     setIsAsking(true);
     setError("");
+    if (!preserveLocalAnswer) {
+      setLocalAnswerCards([]);
+      setAnswerSource(undefined);
+    }
 
     try {
       const response = await fetch(`${backendUrl}/api/assistant/answer`, {
@@ -151,6 +170,8 @@ export function App() {
       }
 
       setAnswer("answer" in data ? data.answer : "");
+      setLocalAnswerCards([]);
+      setAnswerSource(settings.apiKey.trim() ? "gpt" : undefined);
       return true;
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : t("permissionError"));
@@ -178,6 +199,8 @@ export function App() {
       return;
     }
 
+    const knowledgeMatches = findKnowledgeCards(fragment);
+
     if (source === "microphone") {
       setRecognitionMessage(t("livePreparingAnswer"));
     }
@@ -190,7 +213,17 @@ export function App() {
     liveTimerRef.current = window.setTimeout(async () => {
       answeredFragmentsRef.current.add(detection.normalizedText);
       lastLiveAnswerAtRef.current = Date.now();
-      const sent = await requestAnswer(fragment, "live");
+
+      if (knowledgeMatches.length > 0) {
+        showLocalAnswer(knowledgeMatches);
+        const shouldEnrich = settings.apiKey.trim().length > 0 && settings.answerMode !== "short";
+        if (!shouldEnrich) {
+          if (source === "microphone") setRecognitionMessage("");
+          return;
+        }
+      }
+
+      const sent = await requestAnswer(fragment, "live", knowledgeMatches.length > 0);
       if (!sent) {
         answeredFragmentsRef.current.delete(detection.normalizedText);
       }
@@ -198,7 +231,7 @@ export function App() {
         setRecognitionMessage("");
       }
     }, Math.max(liveDebounceMs, throttleDelay));
-  }, [requestAnswer, settings.workMode, t]);
+  }, [requestAnswer, settings.answerMode, settings.apiKey, settings.workMode, showLocalAnswer, t]);
 
   liveFragmentHandlerRef.current = queueLiveAnswer;
 
@@ -257,6 +290,18 @@ export function App() {
       window.clearTimeout(liveTimerRef.current);
       liveTimerRef.current = undefined;
     }
+  }
+
+  async function askManually() {
+    const knowledgeMatches = findKnowledgeCards(recognizedText);
+    if (knowledgeMatches.length > 0) {
+      showLocalAnswer(knowledgeMatches);
+      if (!settings.apiKey.trim()) {
+        return;
+      }
+    }
+
+    await requestAnswer(recognizedText, "manual", knowledgeMatches.length > 0);
   }
 
   async function requestMicrophonePermission() {
@@ -362,7 +407,7 @@ export function App() {
           <div className="actions-row">
             <div className="input-device"><Mic size={16} /><span>{selectedAudioDeviceLabel}</span></div>
             {settings.workMode === "manual" ? (
-              <button className="ask-button" type="button" onClick={() => void requestAnswer(recognizedText, "manual")} disabled={isAsking || !recognizedText.trim()}>
+              <button className="ask-button" type="button" onClick={() => void askManually()} disabled={isAsking || !recognizedText.trim()}>
                 <Send size={18} />{isAsking ? t("asking") : t("ask")}
               </button>
             ) : <span className="live-ready">{t("liveReady")}</span>}
@@ -370,11 +415,38 @@ export function App() {
         </div>
 
         <div className="panel answer-panel">
-          <div className="panel-header"><div><h2>{t("answerPanel")}</h2><p>{t("modeLabel")}: {t(settings.answerMode)}</p></div></div>
+          <div className="panel-header">
+            <div>
+              <h2>{t("answerPanel")}</h2>
+              <p className="answer-meta">
+                <span>{t("modeLabel")}: {t(settings.answerMode)}</span>
+                {answerSource ? <span className={`answer-source source-${answerSource}`}>{answerSource === "local" ? t("sourceLocalKnowledge") : t("sourceGpt")}</span> : null}
+              </p>
+            </div>
+          </div>
           {error ? <div className="error-message">{error}</div> : null}
-          <pre className={answer ? "answer-text" : "answer-text answer-empty"}>
-            {isAsking ? t("loadingAnswer") : answer || (settings.workMode === "live" ? t("emptyAnswerLive") : t("emptyAnswerManual"))}
-          </pre>
+          {answerSource === "local" && localAnswerCards.length > 0 ? (
+            <div className="local-knowledge-answer">
+              {localAnswerCards.map((knowledgeCard) => (
+                <article className="knowledge-card" key={knowledgeCard.id}>
+                  <h3>{knowledgeCard.title}</h3>
+                  <p>{knowledgeCard.shortExplanation}</p>
+                  <ul>{knowledgeCard.bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}</ul>
+                  {knowledgeCard.commands.length > 0 ? (
+                    <div className="knowledge-commands">
+                      <strong>{settings.answerLanguage === "ru" ? "Полезные команды" : "Useful commands"}</strong>
+                      {knowledgeCard.commands.map((command) => <code key={command}>{command}</code>)}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+              {isAsking ? <div className="knowledge-enrichment-status">{t("enrichingWithGpt")}</div> : null}
+            </div>
+          ) : (
+            <pre className={answer ? "answer-text" : "answer-text answer-empty"}>
+              {isAsking ? t("loadingAnswer") : answer || (settings.workMode === "live" ? t("emptyAnswerLive") : t("emptyAnswerManual"))}
+            </pre>
+          )}
         </div>
       </section>
 
@@ -501,4 +573,16 @@ function getTranscriptionStatusText(
   if (status === "missing_api_key") return t("apiKeyRequiredForSpeechRecognition");
   if (status === "error") return t("transcriptionError");
   return t("stopped");
+}
+
+function formatKnowledgeCards(cards: KnowledgeCard[], language: AppLanguage): string {
+  const commandsLabel = language === "ru" ? "Полезные команды" : "Useful commands";
+  return cards.map((knowledgeCard) => [
+    knowledgeCard.title,
+    knowledgeCard.shortExplanation,
+    ...knowledgeCard.bullets.map((bullet) => `• ${bullet}`),
+    ...(knowledgeCard.commands.length > 0
+      ? [commandsLabel, ...knowledgeCard.commands.map((command) => `  ${command}`)]
+      : [])
+  ].join("\n")).join("\n\n");
 }

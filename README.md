@@ -10,7 +10,7 @@ VoiceAssistant/
     desktop/   Electron + React + Vite UI
     backend/   Local Fastify API
   packages/
-    shared/    Shared types and Live Assist fragment detector
+    shared/    Shared types, Live Assist detector, and local knowledge cards
   docs/
 ```
 
@@ -91,6 +91,16 @@ Manual mode keeps the user in control. Type text, start Mock STT, or transcribe 
 Live Assist classifies each completed Mock STT or microphone transcript as an explicit technical question, a technical term, or ignored conversation. Matching fragments are sent automatically to the existing answer endpoint with debounce, throttling, duplicate prevention, and no parallel answer requests.
 
 Live answers are designed for mixed audiences and stay concise. Learning mode may provide a longer explanation.
+
+## Local Knowledge Cards
+
+VoiceAssistant includes a small in-memory catalog of common Linux, Docker, Kubernetes, networking, Active Directory, DNS, and DHCP explanations. Cards contain concise notes, practical bullets, useful commands, aliases, and related terms.
+
+Manual Ask and Live Assist check these cards before waiting for GPT. A matching card is shown immediately with the source label **local knowledge**, and it works without an API key. When an API key is configured, GPT can replace or enrich the local result; Live Assist only requests enrichment for interview and learning answer modes.
+
+Matching is conservative and normalizes Russian and English aliases. Short generic words such as `pod` or `free` require question or technical context to avoid noisy answers.
+
+This is an MVP reference catalog stored in TypeScript. It is not yet a document database, search index, or user-editable knowledge base.
 
 ## Mock STT
 

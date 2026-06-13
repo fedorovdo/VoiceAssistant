@@ -31,3 +31,4 @@ export interface DesktopSettings {
 }
 
 export * from "./liveAssist.js";
+export * from "./knowledgeCards.js";

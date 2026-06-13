@@ -64,6 +64,15 @@ export function classifyTechnicalFragment(text: string): FragmentDetectionResult
     };
   }
 
+  const knowledgeCard = findKnowledgeCards(text)[0];
+  if (knowledgeCard) {
+    return {
+      classification: "technical_term",
+      normalizedText,
+      matchedValue: knowledgeCard.title
+    };
+  }
+
   return { classification: "ignore", normalizedText };
 }
 
@@ -75,3 +84,4 @@ function containsTerm(text: string, term: string): boolean {
   const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(^|[^a-z0-9])${escapedTerm}($|[^a-z0-9])`, "i").test(text);
 }
+import { findKnowledgeCards } from "./knowledgeCards.js";

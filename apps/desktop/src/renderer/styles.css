@@ -280,6 +280,92 @@ textarea {
   min-height: 250px;
 }
 
+.answer-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.answer-source {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.source-local {
+  color: #23613f;
+  background: #e8f5ed;
+}
+
+.source-gpt {
+  color: #174b82;
+  background: #eaf2fb;
+}
+
+.local-knowledge-answer {
+  flex: 1;
+  padding: 18px 20px;
+  overflow: auto;
+}
+
+.knowledge-card + .knowledge-card {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e9ef;
+}
+
+.knowledge-card h3 {
+  margin: 0 0 8px;
+  color: #172033;
+  font-size: 18px;
+}
+
+.knowledge-card p {
+  margin: 0 0 10px;
+  color: #39465a;
+  line-height: 1.5;
+}
+
+.knowledge-card ul {
+  margin: 0 0 12px;
+  padding-left: 22px;
+  color: #293548;
+  line-height: 1.5;
+}
+
+.knowledge-commands {
+  display: grid;
+  gap: 7px;
+}
+
+.knowledge-commands strong,
+.knowledge-enrichment-status {
+  color: #526173;
+  font-size: 12px;
+}
+
+.knowledge-commands code {
+  display: block;
+  padding: 8px 10px;
+  border: 1px solid #dce3ea;
+  border-radius: 6px;
+  color: #172033;
+  background: #f4f7f9;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-enrichment-status {
+  margin-top: 14px;
+  font-weight: 650;
+}
+
 .answer-text {
   flex: 1;
   margin: 0;
