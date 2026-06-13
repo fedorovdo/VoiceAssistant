@@ -3,7 +3,7 @@ import type { SpeechToTextProvider } from "./SpeechToTextProvider.js";
 import { MockSpeechToTextProvider } from "./MockSpeechToTextProvider.js";
 
 export function createSpeechToTextProvider(providerId: SpeechToTextProviderId): SpeechToTextProvider | undefined {
-  if (providerId === "disabled") {
+  if (providerId !== "mock") {
     return undefined;
   }
 

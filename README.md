@@ -52,7 +52,21 @@ Live answers are designed for mixed audiences and stay concise. Learning mode ma
 
 Mock STT is a simulation for development. Demo fragments appear only after **Start** is clicked. **Stop** pauses the simulation and **Clear** removes accumulated demo fragments and resets Live Assist duplicate tracking.
 
-Real speech-to-text and audio recording are not implemented yet. Selecting a microphone does not start recording and no audio is sent to the backend.
+Real speech-to-text is not implemented yet. Mock STT remains available for testing recognized fragments and Live Assist behavior.
+
+## Microphone Recording Foundation
+
+The `microphone` provider captures short audio chunks from the selected input device after the user explicitly clicks **Start**. Chunks are produced locally with `MediaRecorder` about every four seconds.
+
+This foundation is for recording diagnostics only:
+
+- audio chunks stay in memory and are not saved to disk;
+- only chunk count, byte size, and MIME type are shown in the UI;
+- no speech-to-text is performed;
+- no audio is sent to the backend;
+- no audio is sent to OpenAI.
+
+Clicking **Stop**, changing the STT provider, unmounting the renderer, or closing the app stops the recorder and all active media tracks. If a saved input device is unavailable, the recorder falls back to the system default microphone and displays a warning.
 
 ## Languages
 
@@ -65,7 +79,7 @@ These settings are independent, so the interface can be Russian while answers ar
 
 Settings can enumerate browser/Electron audio input devices. Device names may be hidden until microphone permission is granted. The permission helper opens a temporary audio stream, stops all tracks immediately, and refreshes the list.
 
-The selected device ID is stored in renderer `localStorage` for future real STT integration.
+The selected device ID is stored in renderer `localStorage` and is used by the local microphone recorder.
 
 ## AI Providers
 

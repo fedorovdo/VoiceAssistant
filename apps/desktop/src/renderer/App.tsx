@@ -12,6 +12,8 @@ import { classifyTechnicalFragment } from "@voiceassistant/shared";
 import { createTranslator } from "./i18n.js";
 import { createSpeechToTextProvider } from "./speech/createSpeechToTextProvider.js";
 import type { RecognitionStatus } from "./speech/SpeechToTextProvider.js";
+import { useMicrophoneRecorder } from "./speech/useMicrophoneRecorder.js";
+import type { MicrophoneRecorderStatus } from "./speech/useMicrophoneRecorder.js";
 
 const defaultSettings: DesktopSettings = {
   apiKey: "",
@@ -52,17 +54,15 @@ export function App() {
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>("permission_hint");
   const [permissionState, setPermissionState] = useState<PermissionState>("idle");
   const [permissionMessage, setPermissionMessage] = useState<PermissionMessage>();
+  const microphoneRecorder = useMicrophoneRecorder();
   const liveTimerRef = useRef<number>();
   const answeredFragmentsRef = useRef(new Set<string>());
   const lastLiveAnswerAtRef = useRef(0);
   const requestInFlightRef = useRef(false);
-  const isListening = recognitionStatus === "listening";
+  const isMicrophoneActive = microphoneRecorder.status === "recording" || microphoneRecorder.status === "requesting_permission";
+  const isListening = recognitionStatus === "listening" || isMicrophoneActive;
 
-  const statusText = settings.speechToTextProvider === "disabled"
-    ? t("disabled")
-    : isListening
-      ? t("listening")
-      : t("stopped");
+  const statusText = getMainStatusText(settings.speechToTextProvider, recognitionStatus, microphoneRecorder.status, t);
 
   const selectedAudioDeviceLabel = useMemo(() => {
     if (!settings.audioInputDeviceId) {
@@ -175,27 +175,32 @@ export function App() {
   useEffect(() => () => speechToTextProvider?.stop(), [speechToTextProvider]);
   useEffect(() => { void refreshAudioDevices(); }, [refreshAudioDevices]);
   useEffect(() => {
-    if (settings.speechToTextProvider === "disabled") {
-      speechToTextProvider?.stop();
-      setRecognitionStatus("stopped");
-    }
+    speechToTextProvider?.stop();
+    microphoneRecorder.stop();
+    setRecognitionStatus("stopped");
     setRecognitionMessage("");
-  }, [settings.speechToTextProvider, speechToTextProvider]);
+  }, [settings.speechToTextProvider, speechToTextProvider, microphoneRecorder.stop]);
   useEffect(() => () => {
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
     }
   }, []);
 
-  function startListening() {
+  async function startListening() {
     setError("");
+    setRecognitionMessage("");
+
+    if (settings.speechToTextProvider === "microphone") {
+      await microphoneRecorder.start(settings.audioInputDeviceId);
+      return;
+    }
+
     if (!speechToTextProvider || settings.speechToTextProvider === "disabled") {
       setRecognitionStatus("stopped");
       setRecognitionMessage(t("providerDisabledMessage"));
       return;
     }
 
-    setRecognitionMessage("");
     speechToTextProvider.start({
       onResult: (result) => {
         if (!result.isFinal) return;
@@ -208,6 +213,7 @@ export function App() {
 
   function stopListening() {
     speechToTextProvider?.stop();
+    microphoneRecorder.stop();
   }
 
   function clearRecognizedText() {
@@ -278,6 +284,7 @@ export function App() {
           {settings.workMode === "live" ? t("liveMode") : t("manualMode")}
         </span>
         {settings.speechToTextProvider === "mock" ? <span className="mode-badge simulated-badge">{t("mockStt")} · {t("simulatedMode")}</span> : null}
+        {settings.speechToTextProvider === "microphone" ? <span className="mode-badge recording-badge">{t("microphoneCapture")}</span> : null}
         <span className="status-note">{t("realSttUnavailable")}</span>
       </div>
 
@@ -286,10 +293,10 @@ export function App() {
           <div className="panel-header">
             <div>
               <h2>{t("recognizedPanel")}</h2>
-              <p>{settings.speechToTextProvider === "mock" ? t("recognizedHintMock") : t("recognizedHintDisabled")}</p>
+              <p>{getRecognitionHint(settings.speechToTextProvider, t)}</p>
             </div>
             <div className="recognition-controls">
-              <button className="control-button" type="button" onClick={startListening} disabled={isListening || settings.speechToTextProvider === "disabled"}>
+              <button className="control-button" type="button" onClick={() => void startListening()} disabled={isListening || settings.speechToTextProvider === "disabled"}>
                 <Play size={18} />{t("start")}
               </button>
               <button className="control-button stop" type="button" onClick={stopListening} disabled={!isListening}>
@@ -302,6 +309,20 @@ export function App() {
           </div>
           <textarea value={recognizedText} onChange={(event) => setRecognizedText(event.target.value)} placeholder={t("recognizedPlaceholder")} />
           {recognitionMessage ? <div className="recognition-message">{recognitionMessage}</div> : null}
+          {settings.speechToTextProvider === "microphone" ? (
+            <div className="recorder-debug">
+              <div className="recorder-debug-header">
+                <span>{t("recordingDebug")}</span>
+                <span>{t("audioLocalOnly")}</span>
+              </div>
+              <div className="recorder-debug-values">
+                <span>{t("chunksCaptured")}: {microphoneRecorder.debug.chunksCaptured}</span>
+                <span>{t("lastChunkSize")}: {microphoneRecorder.debug.lastChunkSize > 0 ? `${microphoneRecorder.debug.lastChunkSize} ${t("bytes")}` : t("noChunksYet")}</span>
+                <span>{t("lastChunkMimeType")}: {microphoneRecorder.debug.lastChunkMimeType || "—"}</span>
+              </div>
+              {microphoneRecorder.usedDefaultDevice ? <div className="recorder-warning">{t("defaultDeviceFallback")}</div> : null}
+            </div>
+          ) : null}
           <div className="actions-row">
             <div className="input-device"><Mic size={16} /><span>{selectedAudioDeviceLabel}</span></div>
             {settings.workMode === "manual" ? (
@@ -348,7 +369,7 @@ export function App() {
             </div>
 
             <div className="settings-field"><label htmlFor="work-mode">{t("workMode")}</label><select id="work-mode" value={settings.workMode} onChange={(event) => setSettings({ ...settings, workMode: event.target.value as WorkMode })}><option value="manual">{t("manual")}</option><option value="live">{t("live")}</option></select></div>
-            <div className="settings-field"><label htmlFor="speech-provider">{t("speechProvider")}</label><select id="speech-provider" value={settings.speechToTextProvider} onChange={(event) => setSettings({ ...settings, speechToTextProvider: event.target.value as SpeechToTextProviderId })}><option value="disabled">{t("disabled")}</option><option value="mock">{t("mockSimulated")}</option></select></div>
+            <div className="settings-field"><label htmlFor="speech-provider">{t("speechProvider")}</label><select id="speech-provider" value={settings.speechToTextProvider} onChange={(event) => setSettings({ ...settings, speechToTextProvider: event.target.value as SpeechToTextProviderId })}><option value="disabled">{t("disabled")}</option><option value="mock">{t("mockSimulated")}</option><option value="microphone">{t("microphoneProvider")}</option></select></div>
             <div className="settings-field"><label htmlFor="interface-language">{t("interfaceLanguage")}</label><select id="interface-language" value={settings.interfaceLanguage} onChange={(event) => setSettings({ ...settings, interfaceLanguage: event.target.value as AppLanguage })}><option value="ru">{t("russian")}</option><option value="en">{t("english")}</option></select></div>
             <div className="settings-field"><label htmlFor="answer-language">{t("answerLanguage")}</label><select id="answer-language" value={settings.answerLanguage} onChange={(event) => setSettings({ ...settings, answerLanguage: event.target.value as AppLanguage })}><option value="ru">{t("russian")}</option><option value="en">{t("english")}</option></select></div>
             <div className="settings-field"><label htmlFor="answer-mode">{t("answerMode")}</label><select id="answer-mode" value={settings.answerMode} onChange={(event) => setSettings({ ...settings, answerMode: event.target.value as AnswerMode })}><option value="short">{t("short")}</option><option value="interview">{t("interview")}</option><option value="learning">{t("learning")}</option></select></div>
@@ -384,7 +405,7 @@ function loadSettings(): DesktopSettings {
 function isLanguage(value: unknown): value is AppLanguage { return value === "ru" || value === "en"; }
 function isAnswerMode(value: unknown): value is AnswerMode { return value === "short" || value === "interview" || value === "learning"; }
 function isWorkMode(value: unknown): value is WorkMode { return value === "manual" || value === "live"; }
-function isSpeechProvider(value: unknown): value is SpeechToTextProviderId { return value === "disabled" || value === "mock"; }
+function isSpeechProvider(value: unknown): value is SpeechToTextProviderId { return value === "disabled" || value === "mock" || value === "microphone"; }
 
 function appendRecognizedText(currentText: string, phrase: string): string {
   const trimmed = currentText.trim();
@@ -407,4 +428,29 @@ function getMicrophonePermissionMessage(error: unknown): PermissionMessage {
   if (error instanceof DOMException && error.name === "NotAllowedError") return "denied";
   if (error instanceof DOMException && error.name === "NotFoundError") return "not_found";
   return "error";
+}
+
+function getMainStatusText(
+  provider: SpeechToTextProviderId,
+  recognitionStatus: RecognitionStatus,
+  recorderStatus: MicrophoneRecorderStatus,
+  t: ReturnType<typeof createTranslator>
+): string {
+  if (provider === "disabled") return t("disabled");
+  if (provider === "mock") return recognitionStatus === "listening" ? t("listening") : t("stopped");
+  if (recorderStatus === "requesting_permission") return t("requestingMicrophone");
+  if (recorderStatus === "recording") return t("recordingChunks");
+  if (recorderStatus === "permission_denied") return t("microphonePermissionDeniedStatus");
+  if (recorderStatus === "device_unavailable") return t("selectedDeviceUnavailableStatus");
+  if (recorderStatus === "error") return t("recorderErrorStatus");
+  return t("stopped");
+}
+
+function getRecognitionHint(
+  provider: SpeechToTextProviderId,
+  t: ReturnType<typeof createTranslator>
+): string {
+  if (provider === "mock") return t("recognizedHintMock");
+  if (provider === "microphone") return t("recognizedHintMicrophone");
+  return t("recognizedHintDisabled");
 }

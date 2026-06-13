@@ -146,6 +146,12 @@ button {
   background: #fff7df;
 }
 
+.recording-badge {
+  border-color: #e59a8e;
+  color: #8a2e23;
+  background: #fff0ed;
+}
+
 .status-note {
   color: #697386;
   font-size: 12px;
@@ -346,6 +352,38 @@ label {
   gap: 7px;
   color: #465367;
   font-size: 14px;
+  font-weight: 650;
+}
+
+.recorder-debug {
+  display: grid;
+  gap: 7px;
+  padding: 11px 20px;
+  border-top: 1px solid #edf0f4;
+  color: #526173;
+  background: #f8fafc;
+  font-size: 12px;
+}
+
+.recorder-debug-header,
+.recorder-debug-values {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.recorder-debug-header span:first-child {
+  color: #293548;
+  font-weight: 700;
+}
+
+.recorder-debug-header span:last-child {
+  color: #697386;
+}
+
+.recorder-warning {
+  color: #8a5a12;
   font-weight: 650;
 }
 
