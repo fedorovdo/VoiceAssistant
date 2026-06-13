@@ -19,7 +19,7 @@ export interface DesktopSettings {
   apiKey: string;
   model: string;
   language: AppLanguage;
-  audioInputDevice: string;
+  audioInputDeviceId: string;
   answerMode: AnswerMode;
   speechToTextProvider: SpeechToTextProviderId;
 }

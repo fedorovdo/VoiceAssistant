@@ -83,6 +83,12 @@ For this MVP, speech recognition uses a desktop STT provider setting. Choose `mo
 
 Settings are saved in browser `localStorage` for the desktop renderer.
 
+### Microphone Device Selection
+
+Open **Settings** to choose an audio input device. Use **Refresh devices** to scan again after connecting or removing a microphone. The selected device ID is stored in `localStorage`, but VoiceAssistant does not record or send audio yet.
+
+Browsers and Electron may hide microphone names until permission is granted. Use **Request microphone permission** to grant access; VoiceAssistant immediately stops the temporary media stream and refreshes the device list.
+
 ## Tests
 
 Backend tests do not require a real OpenAI key.

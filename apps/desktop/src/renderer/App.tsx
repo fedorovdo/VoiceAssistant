@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Mic, Settings, Square, Play, Send, X, Trash2 } from "lucide-react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { Mic, Settings, Square, Play, Send, X, Trash2, RefreshCw, ShieldCheck } from "lucide-react";
 import type {
   AnswerMode,
   AssistantAnswerResponse,
@@ -13,7 +13,7 @@ const defaultSettings: DesktopSettings = {
   apiKey: "",
   model: "gpt-4.1-mini",
   language: "ru",
-  audioInputDevice: "Default microphone",
+  audioInputDeviceId: "",
   answerMode: "interview",
   speechToTextProvider: "mock"
 };
@@ -34,6 +34,13 @@ export function App() {
   const [isAsking, setIsAsking] = useState(false);
   const [error, setError] = useState("");
   const [recognitionMessage, setRecognitionMessage] = useState("");
+  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [isRefreshingDevices, setIsRefreshingDevices] = useState(false);
+  const [deviceMessage, setDeviceMessage] = useState(
+    "Microphone permission may be required to list device names."
+  );
+  const [permissionState, setPermissionState] = useState<"idle" | "requesting" | "success" | "error">("idle");
+  const [permissionMessage, setPermissionMessage] = useState("");
   const isListening = recognitionStatus === "listening";
 
   const statusText = useMemo(() => {
@@ -48,11 +55,60 @@ export function App() {
     return "Stopped";
   }, [isListening, settings.speechToTextProvider]);
 
+  const selectedAudioDeviceLabel = useMemo(() => {
+    if (!settings.audioInputDeviceId) {
+      return "System default microphone";
+    }
+
+    const selectedIndex = audioInputDevices.findIndex(
+      (device) => device.deviceId === settings.audioInputDeviceId
+    );
+
+    if (selectedIndex === -1) {
+      return "Selected microphone";
+    }
+
+    return getAudioDeviceLabel(audioInputDevices[selectedIndex], selectedIndex);
+  }, [audioInputDevices, settings.audioInputDeviceId]);
+
+  const refreshAudioDevices = useCallback(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      setAudioInputDevices([]);
+      setDeviceMessage("Audio input device discovery is not available in this environment.");
+      return;
+    }
+
+    setIsRefreshingDevices(true);
+
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter((device) => device.kind === "audioinput");
+      setAudioInputDevices(audioInputs);
+
+      if (audioInputs.length === 0) {
+        setDeviceMessage("No audio input devices found. Microphone permission may be required to list device names.");
+      } else if (audioInputs.some((device) => device.label.length === 0)) {
+        setDeviceMessage("Microphone permission may be required to list device names.");
+      } else {
+        setDeviceMessage(`${audioInputs.length} microphone${audioInputs.length === 1 ? "" : "s"} found.`);
+      }
+    } catch {
+      setAudioInputDevices([]);
+      setDeviceMessage("Could not list microphones. Microphone permission may be required.");
+    } finally {
+      setIsRefreshingDevices(false);
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       speechToTextProvider?.stop();
     };
   }, [speechToTextProvider]);
+
+  useEffect(() => {
+    void refreshAudioDevices();
+  }, [refreshAudioDevices]);
 
   useEffect(() => {
     if (settings.speechToTextProvider === "disabled") {
@@ -125,6 +181,28 @@ export function App() {
     setRecognizedText("");
   }
 
+  async function requestMicrophonePermission() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setPermissionState("error");
+      setPermissionMessage("Microphone permission requests are not available in this environment.");
+      return;
+    }
+
+    setPermissionState("requesting");
+    setPermissionMessage("Requesting microphone permission...");
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      setPermissionState("success");
+      setPermissionMessage("Microphone permission granted. Device list refreshed.");
+      await refreshAudioDevices();
+    } catch (permissionError) {
+      setPermissionState("error");
+      setPermissionMessage(getMicrophonePermissionError(permissionError));
+    }
+  }
+
   function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
@@ -192,7 +270,7 @@ export function App() {
           <div className="actions-row">
             <div className="input-device">
               <Mic size={16} />
-              <span>{settings.audioInputDevice}</span>
+              <span>{selectedAudioDeviceLabel}</span>
             </div>
             <button className="ask-button" type="button" onClick={askAssistant} disabled={isAsking}>
               <Send size={18} />
@@ -244,15 +322,49 @@ export function App() {
               />
             </label>
 
-            <label>
-              Audio input device
-              <input
-                type="text"
-                value={settings.audioInputDevice}
-                onChange={(event) => setSettings({ ...settings, audioInputDevice: event.target.value })}
-                placeholder="Microphone selection placeholder"
-              />
-            </label>
+            <div className="settings-field">
+              <label htmlFor="audio-input-device">Audio input device</label>
+              <select
+                id="audio-input-device"
+                value={settings.audioInputDeviceId}
+                onChange={(event) => setSettings({ ...settings, audioInputDeviceId: event.target.value })}
+              >
+                <option value="">System default microphone</option>
+                {settings.audioInputDeviceId &&
+                !audioInputDevices.some((device) => device.deviceId === settings.audioInputDeviceId) ? (
+                  <option value={settings.audioInputDeviceId}>Previously selected microphone</option>
+                ) : null}
+                {audioInputDevices.map((device, index) => (
+                  <option key={device.deviceId || `${device.groupId}-${index}`} value={device.deviceId}>
+                    {getAudioDeviceLabel(device, index)}
+                  </option>
+                ))}
+              </select>
+              <div className="device-actions">
+                <button
+                  className="secondary-button settings-action-button"
+                  type="button"
+                  onClick={() => void refreshAudioDevices()}
+                  disabled={isRefreshingDevices}
+                >
+                  <RefreshCw size={17} />
+                  {isRefreshingDevices ? "Refreshing..." : "Refresh devices"}
+                </button>
+                <button
+                  className="secondary-button settings-action-button"
+                  type="button"
+                  onClick={() => void requestMicrophonePermission()}
+                  disabled={permissionState === "requesting"}
+                >
+                  <ShieldCheck size={17} />
+                  Request microphone permission
+                </button>
+              </div>
+              <p className="device-message">{deviceMessage}</p>
+              {permissionMessage ? (
+                <p className={`permission-message permission-${permissionState}`}>{permissionMessage}</p>
+              ) : null}
+            </div>
 
             <label>
               Speech-to-text provider
@@ -306,8 +418,10 @@ function loadSettings(): DesktopSettings {
     const parsed = JSON.parse(rawSettings) as Partial<DesktopSettings>;
 
     return {
-      ...defaultSettings,
-      ...parsed,
+      apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : defaultSettings.apiKey,
+      model: typeof parsed.model === "string" ? parsed.model : defaultSettings.model,
+      audioInputDeviceId:
+        typeof parsed.audioInputDeviceId === "string" ? parsed.audioInputDeviceId : defaultSettings.audioInputDeviceId,
       answerMode: isAnswerMode(parsed.answerMode) ? parsed.answerMode : defaultSettings.answerMode,
       language: parsed.language === "en" || parsed.language === "ru" ? parsed.language : defaultSettings.language,
       speechToTextProvider: isSpeechToTextProvider(parsed.speechToTextProvider)
@@ -330,4 +444,20 @@ function isSpeechToTextProvider(value: unknown): value is SpeechToTextProviderId
 function appendRecognizedText(currentText: string, recognizedPhrase: string): string {
   const trimmedText = currentText.trim();
   return trimmedText.length > 0 ? `${trimmedText}\n${recognizedPhrase}` : recognizedPhrase;
+}
+
+function getAudioDeviceLabel(device: MediaDeviceInfo, index: number): string {
+  return device.label.trim() || `Microphone ${index + 1}`;
+}
+
+function getMicrophonePermissionError(error: unknown): string {
+  if (error instanceof DOMException && error.name === "NotAllowedError") {
+    return "Microphone permission was not granted. You can continue using typed text.";
+  }
+
+  if (error instanceof DOMException && error.name === "NotFoundError") {
+    return "No microphone was found on this device.";
+  }
+
+  return "Could not request microphone permission. Check Windows privacy settings and try again.";
 }

@@ -270,9 +270,11 @@ textarea {
 
 .settings-dialog {
   width: min(520px, 100%);
+  max-height: calc(100vh - 48px);
   display: grid;
   gap: 15px;
   padding: 22px;
+  overflow-y: auto;
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 24px 64px rgb(20 30 48 / 24%);
@@ -297,6 +299,48 @@ label {
   color: #465367;
   font-size: 14px;
   font-weight: 650;
+}
+
+.settings-field {
+  display: grid;
+  gap: 7px;
+}
+
+.device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-action-button {
+  flex: 1 1 190px;
+  min-width: 0;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.device-message,
+.permission-message {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.device-message {
+  color: #697386;
+}
+
+.permission-requesting {
+  color: #526173;
+}
+
+.permission-success {
+  color: #096b3f;
+}
+
+.permission-error {
+  color: #9b241c;
 }
 
 input,
