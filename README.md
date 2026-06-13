@@ -1,6 +1,6 @@
 # VoiceAssistant
 
-VoiceAssistant is a fast local desktop helper for technical questions. It is intentionally not a universal meeting assistant: the MVP focuses on short technical question fragments, quick detection, and concise answers during technical conversations or interview practice.
+VoiceAssistant is a local technical learning assistant for live conversations. It helps developers, DevOps engineers, managers, designers, and junior specialists understand technical questions and terms without turning the app into a general meeting recorder.
 
 ## Project Structure
 
@@ -10,7 +10,7 @@ VoiceAssistant/
     desktop/   Electron + React + Vite UI
     backend/   Local Fastify API
   packages/
-    shared/    Shared TypeScript types
+    shared/    Shared types and Live Assist fragment detector
   docs/
 ```
 
@@ -22,86 +22,62 @@ Use Node.js 20 or newer.
 npm install
 ```
 
-## Run Backend
+## Run
+
+Start the backend:
 
 ```bash
 npm run dev:backend
 ```
 
-The backend starts on `http://127.0.0.1:8787`.
-
-Useful endpoints:
-
-- `GET /health`
-- `POST /api/assistant/answer`
-
-Example request:
-
-```json
-{
-  "text": "Что такое Kubernetes?",
-  "mode": "interview",
-  "model": "gpt-4.1-mini",
-  "apiKey": "optional user key"
-}
-```
-
-## Mock Mode
-
-Mock mode is the default when no API key is provided. Leave the API key field empty in desktop settings, or call the backend without `apiKey` and without `OPENAI_API_KEY`.
-
-```json
-{
-  "text": "Как работает Kubernetes?",
-  "mode": "short"
-}
-```
-
-This returns a deterministic local mock answer and does not contact OpenAI.
-
-## Real OpenAI Mode
-
-To use real answer generation, provide an OpenAI API key in the desktop settings or set `OPENAI_API_KEY` in your local environment before starting the backend.
-
-Recommended first model value:
-
-```text
-gpt-4.1-mini
-```
-
-The backend uses the official OpenAI npm package and the Responses API. Do not commit real API keys. Keep `.env` local and use `.env.example` only as a template.
-
-## Run Desktop
-
-Start the backend first, then run:
+Then start the Electron desktop app:
 
 ```bash
 npm run dev:desktop
 ```
 
-For this MVP, speech recognition uses a desktop STT provider setting. Choose `mock` to simulate recognized technical phrases with **Start**, or `disabled` to keep recognition off and type text manually. Click **Ask** to send the recognized text to the backend. The answer appears in the bottom panel.
+The backend is available at `http://127.0.0.1:8787` with `GET /health` and `POST /api/assistant/answer`.
 
-Settings are saved in browser `localStorage` for the desktop renderer.
+## Manual Mode
 
-### Microphone Device Selection
+Manual mode keeps the user in control. Type text or start Mock STT, review the recognized dialogue, and click **Ask** to request an answer.
 
-Open **Settings** to choose an audio input device. Use **Refresh devices** to scan again after connecting or removing a microphone. The selected device ID is stored in `localStorage`, but VoiceAssistant does not record or send audio yet.
+## Live Assist Mode
 
-Browsers and Electron may hide microphone names until permission is granted. Use **Request microphone permission** to grant access; VoiceAssistant immediately stops the temporary media stream and refreshes the device list.
+Live Assist classifies each completed mock fragment as an explicit technical question, a technical term, or ignored conversation. Matching fragments are sent automatically to the existing answer endpoint with debounce, throttling, and duplicate prevention.
 
-## Tests
+Live answers are designed for mixed audiences and stay concise. Learning mode may provide a longer explanation.
 
-Backend tests do not require a real OpenAI key.
+## Mock STT
+
+Mock STT is a simulation for development. Demo fragments appear only after **Start** is clicked. **Stop** pauses the simulation and **Clear** removes accumulated demo fragments and resets Live Assist duplicate tracking.
+
+Real speech-to-text and audio recording are not implemented yet. Selecting a microphone does not start recording and no audio is sent to the backend.
+
+## Languages
+
+- **Interface language** controls desktop labels, status text, settings, and messages. Russian is the default.
+- **Answer language** controls the requested language for assistant explanations.
+
+These settings are independent, so the interface can be Russian while answers are requested in English, or the reverse.
+
+## Microphone Selection
+
+Settings can enumerate browser/Electron audio input devices. Device names may be hidden until microphone permission is granted. The permission helper opens a temporary audio stream, stops all tracks immediately, and refreshes the list.
+
+The selected device ID is stored in renderer `localStorage` for future real STT integration.
+
+## AI Providers
+
+Without an API key, the backend uses `MockAiProvider`. To use OpenAI, enter a key in desktop settings or set `OPENAI_API_KEY` locally. A suitable example model is `gpt-4.1-mini`.
+
+Do not commit real API keys. Keep `.env` local and use `.env.example` only as a template.
+
+## Verification
 
 ```bash
 npm run test:backend
+npm run build
 ```
 
-## MVP Roadmap
-
-1. Add microphone capture in the desktop app.
-2. Add replaceable speech-to-text provider.
-3. Add answer streaming for lower perceived latency.
-4. Persist richer settings with an Electron-safe storage layer.
-5. Improve technical question detection with scoring and language-aware rules.
-6. Package the Windows desktop app for local installation.
+Automated tests do not require a real OpenAI key.

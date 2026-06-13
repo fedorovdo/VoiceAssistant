@@ -110,6 +110,47 @@ button {
   padding: 24px 28px 28px;
 }
 
+.assist-status-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 28px;
+  border-bottom: 1px solid #dfe4ea;
+  background: #ffffff;
+}
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border: 1px solid #cfd8e3;
+  border-radius: 999px;
+  color: #465367;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.live-badge {
+  border-color: #80b5ec;
+  color: #174b82;
+  background: #eaf4ff;
+}
+
+.simulated-badge {
+  border-color: #dfb662;
+  color: #725018;
+  background: #fff7df;
+}
+
+.status-note {
+  color: #697386;
+  font-size: 12px;
+}
+
 .panel {
   display: flex;
   flex-direction: column;
@@ -175,6 +216,13 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.live-ready {
+  color: #174b82;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: right;
 }
 
 .control-button,
@@ -357,4 +405,39 @@ select {
 .save-button {
   margin-top: 6px;
   width: 100%;
+}
+
+@media (max-width: 850px) {
+  body {
+    min-width: 0;
+  }
+
+  .top-bar,
+  .assist-status-line,
+  .workspace {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .panel-header,
+  .actions-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .recognition-controls {
+    justify-content: flex-start;
+  }
+
+  .actions-row {
+    align-items: stretch;
+  }
+
+  .ask-button {
+    width: 100%;
+  }
+
+  .live-ready {
+    text-align: left;
+  }
 }

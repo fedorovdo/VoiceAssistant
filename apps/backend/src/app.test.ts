@@ -48,6 +48,36 @@ test("POST /api/assistant/answer uses mock mode when apiKey is missing", async (
   }
 });
 
+test("POST /api/assistant/answer accepts a technical term in live mode", async () => {
+  const originalApiKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = "";
+  const app = buildApp();
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/assistant/answer",
+      payload: {
+        text: "Docker image хранится в registry",
+        mode: "short",
+        workMode: "live",
+        answerLanguage: "ru"
+      }
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.match(response.json().answer, /Live Assist/);
+  } finally {
+    if (originalApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalApiKey;
+    }
+
+    await app.close();
+  }
+});
+
 test("POST /api/assistant/answer rejects empty text", async () => {
   const app = buildApp();
 

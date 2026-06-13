@@ -2,6 +2,8 @@ export type AnswerMode = "short" | "interview" | "learning";
 
 export type AppLanguage = "ru" | "en";
 
+export type WorkMode = "manual" | "live";
+
 export type SpeechToTextProviderId = "disabled" | "mock";
 
 export interface AssistantAnswerRequest {
@@ -9,6 +11,8 @@ export interface AssistantAnswerRequest {
   mode: AnswerMode;
   model?: string;
   apiKey?: string;
+  workMode?: WorkMode;
+  answerLanguage?: AppLanguage;
 }
 
 export interface AssistantAnswerResponse {
@@ -18,8 +22,12 @@ export interface AssistantAnswerResponse {
 export interface DesktopSettings {
   apiKey: string;
   model: string;
-  language: AppLanguage;
+  interfaceLanguage: AppLanguage;
+  answerLanguage: AppLanguage;
   audioInputDeviceId: string;
   answerMode: AnswerMode;
+  workMode: WorkMode;
   speechToTextProvider: SpeechToTextProviderId;
 }
+
+export * from "./liveAssist.js";
