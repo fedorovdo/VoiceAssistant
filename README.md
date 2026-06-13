@@ -40,11 +40,11 @@ The backend is available at `http://127.0.0.1:8787` with `GET /health`, `POST /a
 
 ## Manual Mode
 
-Manual mode keeps the user in control. Type text or start Mock STT, review the recognized dialogue, and click **Ask** to request an answer.
+Manual mode keeps the user in control. Type text, start Mock STT, or transcribe microphone audio, then review the recognized dialogue and click **Ask** to request an answer. Microphone transcripts never trigger automatic answers in manual mode.
 
 ## Live Assist Mode
 
-Live Assist classifies each completed mock fragment as an explicit technical question, a technical term, or ignored conversation. Matching fragments are sent automatically to the existing answer endpoint with debounce, throttling, and duplicate prevention.
+Live Assist classifies each completed Mock STT or microphone transcript as an explicit technical question, a technical term, or ignored conversation. Matching fragments are sent automatically to the existing answer endpoint with debounce, throttling, duplicate prevention, and no parallel answer requests.
 
 Live answers are designed for mixed audiences and stay concise. Learning mode may provide a longer explanation.
 
@@ -65,11 +65,12 @@ Microphone STT is experimental:
 - the local backend forwards each accepted chunk to OpenAI for transcription;
 - only one transcription request is processed at a time, and extra chunks may be dropped while it is busy;
 - chunk count, byte size, MIME type, and transcription status remain visible in the UI;
-- recognized text is appended to the top dialogue panel.
+- recognized text is appended to the top dialogue panel;
+- in Live Assist mode, recognized technical fragments can automatically produce an explanation in the answer panel.
 
 Clicking **Stop**, changing the STT provider, unmounting the renderer, or closing the app stops the recorder and all active media tracks. If a saved input device is unavailable, the recorder falls back to the system default microphone and displays a warning.
 
-Real microphone transcription does not trigger `/api/assistant/answer` yet. Live Assist automatic answers remain limited to Mock STT in this step.
+Real microphone STT and its Live Assist integration remain experimental. In manual mode, microphone text still requires the user to click **Ask**.
 
 ## Languages
 

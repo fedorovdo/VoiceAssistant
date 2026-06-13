@@ -36,6 +36,7 @@ const liveThrottleMs = 2000;
 type DeviceStatus = "permission_hint" | "unavailable" | "none" | "found" | "error";
 type PermissionState = "idle" | "requesting" | "success" | "error";
 type PermissionMessage = "unavailable" | "granted" | "denied" | "not_found" | "error" | undefined;
+type LiveFragmentSource = "mock" | "microphone";
 
 export function App() {
   const [settings, setSettings] = useState<DesktopSettings>(loadSettings);
@@ -56,8 +57,10 @@ export function App() {
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>("permission_hint");
   const [permissionState, setPermissionState] = useState<PermissionState>("idle");
   const [permissionMessage, setPermissionMessage] = useState<PermissionMessage>();
+  const liveFragmentHandlerRef = useRef<(fragment: string, source: LiveFragmentSource) => void>(() => undefined);
   const handleTranscript = useCallback((text: string) => {
     setRecognizedText((currentText) => appendRecognizedText(currentText, text));
+    liveFragmentHandlerRef.current(text, "microphone");
   }, []);
   const chunkTranscription = useChunkTranscription({
     backendUrl,
@@ -158,14 +161,25 @@ export function App() {
     }
   }, [settings.answerLanguage, settings.answerMode, settings.apiKey, settings.model, t]);
 
-  const queueLiveAnswer = useCallback((fragment: string) => {
-    if (settings.workMode !== "live" || settings.speechToTextProvider !== "mock") {
+  const queueLiveAnswer = useCallback((fragment: string, source: LiveFragmentSource) => {
+    if (settings.workMode !== "live") {
       return;
     }
 
     const detection = classifyTechnicalFragment(fragment);
-    if (detection.classification === "ignore" || answeredFragmentsRef.current.has(detection.normalizedText)) {
+    if (detection.classification === "ignore") {
+      if (source === "microphone") {
+        setRecognitionMessage(t("liveFragmentIgnored"));
+      }
       return;
+    }
+
+    if (answeredFragmentsRef.current.has(detection.normalizedText)) {
+      return;
+    }
+
+    if (source === "microphone") {
+      setRecognitionMessage(t("livePreparingAnswer"));
     }
 
     if (liveTimerRef.current !== undefined) {
@@ -180,8 +194,13 @@ export function App() {
       if (!sent) {
         answeredFragmentsRef.current.delete(detection.normalizedText);
       }
+      if (source === "microphone") {
+        setRecognitionMessage("");
+      }
     }, Math.max(liveDebounceMs, throttleDelay));
-  }, [requestAnswer, settings.speechToTextProvider, settings.workMode]);
+  }, [requestAnswer, settings.workMode, t]);
+
+  liveFragmentHandlerRef.current = queueLiveAnswer;
 
   useEffect(() => () => speechToTextProvider?.stop(), [speechToTextProvider]);
   useEffect(() => { void refreshAudioDevices(); }, [refreshAudioDevices]);
@@ -218,7 +237,7 @@ export function App() {
       onResult: (result) => {
         if (!result.isFinal) return;
         setRecognizedText((currentText) => appendRecognizedText(currentText, result.text));
-        queueLiveAnswer(result.text);
+        queueLiveAnswer(result.text, "mock");
       },
       onStatusChange: setRecognitionStatus
     });
@@ -346,7 +365,7 @@ export function App() {
               <button className="ask-button" type="button" onClick={() => void requestAnswer(recognizedText, "manual")} disabled={isAsking || !recognizedText.trim()}>
                 <Send size={18} />{isAsking ? t("asking") : t("ask")}
               </button>
-            ) : <span className="live-ready">{settings.speechToTextProvider === "mock" ? t("liveReady") : t("microphoneLiveAutoAnswerDisabled")}</span>}
+            ) : <span className="live-ready">{t("liveReady")}</span>}
           </div>
         </div>
 

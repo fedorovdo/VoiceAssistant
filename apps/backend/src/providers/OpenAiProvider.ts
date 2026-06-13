@@ -52,7 +52,8 @@ function buildInstructions(
     base.push(
       "Live Assist mode: explain the detected question or technical term immediately and educationally.",
       "Use 3-6 concise bullet points. Add one simple analogy only when useful.",
-      "Avoid a long lecture unless learning mode explicitly requires more detail."
+      "Avoid a long lecture unless learning mode explicitly requires more detail.",
+      "If the source phrase appears partial or unclear, answer cautiously and mention that the phrase may be incomplete."
     );
   }
 
