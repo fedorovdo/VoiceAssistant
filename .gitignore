@@ -1,6 +1,7 @@
 node_modules/
 dist/
 apps/*/dist/
+apps/*/release/
 packages/*/dist/
 .env
 *.log

@@ -22,21 +22,65 @@ Use Node.js 20 or newer.
 npm install
 ```
 
-## Run
+## Development Launch
 
-Start the backend:
+The backend and Electron desktop app can still be started in separate terminals. From the repository root, start the backend:
 
 ```bash
 npm run dev:backend
 ```
 
-Then start the Electron desktop app:
+Then start the Electron desktop app in another terminal:
 
 ```bash
 npm run dev:desktop
 ```
 
 The backend is available at `http://127.0.0.1:8787` with `GET /health`, `POST /api/assistant/answer`, and `POST /api/speech/transcribe`.
+
+## One-command Launch
+
+To start both development processes in one terminal with separate `backend` and `desktop` labels:
+
+```bash
+npm run dev:all
+```
+
+On Windows, the PowerShell helper can be launched from the repository root:
+
+```powershell
+.\scripts\start-dev.ps1
+```
+
+If the local PowerShell execution policy blocks scripts, use:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1
+```
+
+Press `Ctrl+C` to stop the backend, Vite server, and Electron process together.
+
+## Windows Packaging
+
+Build an unpacked Windows application directory for local packaging checks:
+
+```bash
+npm run package:desktop
+```
+
+Build a portable Windows executable:
+
+```bash
+npm run dist:desktop
+```
+
+Artifacts are written to `apps/desktop/release/`. The portable target does not require an installer or administrator rights for a normal launch.
+
+The packaged app contains a bundled copy of the local backend. Electron checks `http://127.0.0.1:8787/health` at startup, reuses an existing VoiceAssistant backend when available, or starts its own backend child process. A single-instance lock prevents duplicate packaged app processes, and a backend child started by Electron is stopped when the app exits.
+
+### Current Packaging Limitation
+
+Windows packaging is experimental. The portable executable is currently unsigned and may trigger a Windows SmartScreen warning. Port `8787` must be available unless another VoiceAssistant backend is already running, and the app does not yet provide a UI for changing that production port.
 
 ## Manual Mode
 

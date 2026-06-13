@@ -1,6 +1,8 @@
 {
   "name": "@voiceassistant/desktop",
   "version": "0.1.0",
+  "description": "VoiceAssistant Windows desktop application.",
+  "author": "VoiceAssistant contributors",
   "private": true,
   "type": "module",
   "main": "dist/main/main.js",
@@ -8,7 +10,9 @@
     "dev": "npm run build:main && concurrently -k -n vite,electron \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "npm run build:main && vite build",
     "build:main": "tsc -p tsconfig.electron.json",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "package": "electron-builder --dir --win",
+    "dist": "electron-builder --win portable"
   },
   "dependencies": {
     "@voiceassistant/shared": "*",
@@ -22,9 +26,42 @@
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
     "concurrently": "^8.2.2",
-    "electron": "^29.3.1",
+    "electron": "29.4.6",
     "typescript": "^5.4.5",
     "vite": "^5.2.10",
     "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.voiceassistant.desktop",
+    "productName": "VoiceAssistant",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/main/**/*",
+      "dist/renderer/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "VoiceAssistant-${version}-${arch}.${ext}"
+    }
   }
 }
