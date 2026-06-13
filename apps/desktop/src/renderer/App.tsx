@@ -12,6 +12,8 @@ import { classifyTechnicalFragment } from "@voiceassistant/shared";
 import { createTranslator } from "./i18n.js";
 import { createSpeechToTextProvider } from "./speech/createSpeechToTextProvider.js";
 import type { RecognitionStatus } from "./speech/SpeechToTextProvider.js";
+import { useChunkTranscription } from "./speech/useChunkTranscription.js";
+import type { TranscriptionStatus } from "./speech/useChunkTranscription.js";
 import { useMicrophoneRecorder } from "./speech/useMicrophoneRecorder.js";
 import type { MicrophoneRecorderStatus } from "./speech/useMicrophoneRecorder.js";
 
@@ -54,7 +56,16 @@ export function App() {
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>("permission_hint");
   const [permissionState, setPermissionState] = useState<PermissionState>("idle");
   const [permissionMessage, setPermissionMessage] = useState<PermissionMessage>();
-  const microphoneRecorder = useMicrophoneRecorder();
+  const handleTranscript = useCallback((text: string) => {
+    setRecognizedText((currentText) => appendRecognizedText(currentText, text));
+  }, []);
+  const chunkTranscription = useChunkTranscription({
+    backendUrl,
+    apiKey: settings.apiKey,
+    language: settings.answerLanguage,
+    onTranscript: handleTranscript
+  });
+  const microphoneRecorder = useMicrophoneRecorder({ onChunk: chunkTranscription.transcribeChunk });
   const liveTimerRef = useRef<number>();
   const answeredFragmentsRef = useRef(new Set<string>());
   const lastLiveAnswerAtRef = useRef(0);
@@ -176,10 +187,11 @@ export function App() {
   useEffect(() => { void refreshAudioDevices(); }, [refreshAudioDevices]);
   useEffect(() => {
     speechToTextProvider?.stop();
+    chunkTranscription.stopSession();
     microphoneRecorder.stop();
     setRecognitionStatus("stopped");
     setRecognitionMessage("");
-  }, [settings.speechToTextProvider, speechToTextProvider, microphoneRecorder.stop]);
+  }, [settings.speechToTextProvider, speechToTextProvider, microphoneRecorder.stop, chunkTranscription.stopSession]);
   useEffect(() => () => {
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
@@ -191,6 +203,7 @@ export function App() {
     setRecognitionMessage("");
 
     if (settings.speechToTextProvider === "microphone") {
+      chunkTranscription.startSession();
       await microphoneRecorder.start(settings.audioInputDeviceId);
       return;
     }
@@ -213,6 +226,7 @@ export function App() {
 
   function stopListening() {
     speechToTextProvider?.stop();
+    chunkTranscription.stopSession();
     microphoneRecorder.stop();
   }
 
@@ -285,7 +299,7 @@ export function App() {
         </span>
         {settings.speechToTextProvider === "mock" ? <span className="mode-badge simulated-badge">{t("mockStt")} · {t("simulatedMode")}</span> : null}
         {settings.speechToTextProvider === "microphone" ? <span className="mode-badge recording-badge">{t("microphoneCapture")}</span> : null}
-        <span className="status-note">{t("realSttUnavailable")}</span>
+        <span className="status-note">{settings.speechToTextProvider === "microphone" ? t("experimentalStt") : t("microphoneSttAvailable")}</span>
       </div>
 
       <section className="workspace">
@@ -313,12 +327,15 @@ export function App() {
             <div className="recorder-debug">
               <div className="recorder-debug-header">
                 <span>{t("recordingDebug")}</span>
-                <span>{t("audioLocalOnly")}</span>
+                <span>{t("audioPrivacyNote")}</span>
               </div>
               <div className="recorder-debug-values">
                 <span>{t("chunksCaptured")}: {microphoneRecorder.debug.chunksCaptured}</span>
                 <span>{t("lastChunkSize")}: {microphoneRecorder.debug.lastChunkSize > 0 ? `${microphoneRecorder.debug.lastChunkSize} ${t("bytes")}` : t("noChunksYet")}</span>
                 <span>{t("lastChunkMimeType")}: {microphoneRecorder.debug.lastChunkMimeType || "—"}</span>
+              </div>
+              <div className={chunkTranscription.status === "error" || chunkTranscription.status === "missing_api_key" ? "recorder-warning" : "transcription-status"}>
+                {t("transcriptionStatus")}: {getTranscriptionStatusText(chunkTranscription.status, t)}
               </div>
               {microphoneRecorder.usedDefaultDevice ? <div className="recorder-warning">{t("defaultDeviceFallback")}</div> : null}
             </div>
@@ -329,7 +346,7 @@ export function App() {
               <button className="ask-button" type="button" onClick={() => void requestAnswer(recognizedText, "manual")} disabled={isAsking || !recognizedText.trim()}>
                 <Send size={18} />{isAsking ? t("asking") : t("ask")}
               </button>
-            ) : <span className="live-ready">{settings.speechToTextProvider === "mock" ? t("liveReady") : t("realSttUnavailable")}</span>}
+            ) : <span className="live-ready">{settings.speechToTextProvider === "mock" ? t("liveReady") : t("microphoneLiveAutoAnswerDisabled")}</span>}
           </div>
         </div>
 
@@ -453,4 +470,16 @@ function getRecognitionHint(
   if (provider === "mock") return t("recognizedHintMock");
   if (provider === "microphone") return t("recognizedHintMicrophone");
   return t("recognizedHintDisabled");
+}
+
+function getTranscriptionStatusText(
+  status: TranscriptionStatus,
+  t: ReturnType<typeof createTranslator>
+): string {
+  if (status === "waiting_for_audio") return t("waitingForAudio");
+  if (status === "transcribing") return t("transcribing");
+  if (status === "received") return t("lastTranscriptionReceived");
+  if (status === "missing_api_key") return t("apiKeyRequiredForSpeechRecognition");
+  if (status === "error") return t("transcriptionError");
+  return t("stopped");
 }

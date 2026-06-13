@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 
 export type MicrophoneRecorderStatus =
   | "stopped"
@@ -26,20 +27,34 @@ const initialDebug: MicrophoneRecorderDebug = {
   lastChunkMimeType: ""
 };
 
-export function useMicrophoneRecorder() {
+interface UseMicrophoneRecorderOptions {
+  onChunk?: (chunk: Blob) => void;
+}
+
+export function useMicrophoneRecorder(options: UseMicrophoneRecorderOptions = {}) {
   const streamRef = useRef<MediaStream>();
   const recorderRef = useRef<MediaRecorder>();
+  const chunkTimerRef = useRef<number>();
   const sessionRef = useRef(0);
+  const onChunkRef = useRef(options.onChunk);
   const [state, setState] = useState<MicrophoneRecorderState>({
     status: "stopped",
     debug: initialDebug,
     usedDefaultDevice: false
   });
 
+  useEffect(() => {
+    onChunkRef.current = options.onChunk;
+  }, [options.onChunk]);
+
   const stop = useCallback(() => {
     sessionRef.current += 1;
     const recorder = recorderRef.current;
     recorderRef.current = undefined;
+    if (chunkTimerRef.current !== undefined) {
+      window.clearInterval(chunkTimerRef.current);
+      chunkTimerRef.current = undefined;
+    }
 
     if (recorder && recorder.state !== "inactive") {
       recorder.stop();
@@ -99,16 +114,21 @@ export function useMicrophoneRecorder() {
             lastChunkMimeType: event.data.type || recorder.mimeType || "application/octet-stream"
           }
         }));
+        void onChunkRef.current?.(event.data);
       });
 
       recorder.addEventListener("error", () => {
+        if (chunkTimerRef.current !== undefined) {
+          window.clearInterval(chunkTimerRef.current);
+          chunkTimerRef.current = undefined;
+        }
         stopTracks(stream);
         streamRef.current = undefined;
         recorderRef.current = undefined;
         setState((current) => ({ ...current, status: "error" }));
       });
 
-      recorder.start(4000);
+      startChunkCycle(recorder, session, sessionRef, recorderRef, chunkTimerRef);
       setState({ status: "recording", debug: initialDebug, usedDefaultDevice: shouldUseDefault });
     } catch (error) {
       if (session !== sessionRef.current) {
@@ -141,8 +161,19 @@ export function useMicrophoneRecorder() {
                 lastChunkMimeType: event.data.type || fallbackRecorder.mimeType || "application/octet-stream"
               }
             }));
+            void onChunkRef.current?.(event.data);
           });
-          fallbackRecorder.start(4000);
+          fallbackRecorder.addEventListener("error", () => {
+            if (chunkTimerRef.current !== undefined) {
+              window.clearInterval(chunkTimerRef.current);
+              chunkTimerRef.current = undefined;
+            }
+            stopTracks(fallbackStream);
+            streamRef.current = undefined;
+            recorderRef.current = undefined;
+            setState((current) => ({ ...current, status: "error" }));
+          });
+          startChunkCycle(fallbackRecorder, session, sessionRef, recorderRef, chunkTimerRef);
           setState({ status: "recording", debug: initialDebug, usedDefaultDevice: true });
           return;
         } catch (fallbackError) {
@@ -172,6 +203,26 @@ function requestStream(deviceId: string): Promise<MediaStream> {
 
 function stopTracks(stream: MediaStream | undefined) {
   stream?.getTracks().forEach((track) => track.stop());
+}
+
+function startChunkCycle(
+  recorder: MediaRecorder,
+  session: number,
+  sessionRef: MutableRefObject<number>,
+  recorderRef: MutableRefObject<MediaRecorder | undefined>,
+  chunkTimerRef: MutableRefObject<number | undefined>
+) {
+  recorder.addEventListener("stop", () => {
+    if (session === sessionRef.current && recorderRef.current === recorder) {
+      recorder.start();
+    }
+  });
+  recorder.start();
+  chunkTimerRef.current = window.setInterval(() => {
+    if (session === sessionRef.current && recorder.state === "recording") {
+      recorder.stop();
+    }
+  }, 4000);
 }
 
 function isPermissionDenied(error: unknown): boolean {

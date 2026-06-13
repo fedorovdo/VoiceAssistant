@@ -97,3 +97,75 @@ test("POST /api/assistant/answer rejects empty text", async () => {
 
   await app.close();
 });
+
+test("POST /api/speech/transcribe rejects a request without audio", async () => {
+  const app = buildApp();
+  const multipart = createMultipartPayload([
+    { name: "apiKey", value: "test-key" },
+    { name: "language", value: "ru" }
+  ]);
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/speech/transcribe",
+    headers: { "content-type": `multipart/form-data; boundary=${multipart.boundary}` },
+    payload: multipart.body
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.json(), { error: "Field 'audio' is required." });
+  await app.close();
+});
+
+test("POST /api/speech/transcribe rejects a request without apiKey", async () => {
+  const app = buildApp();
+  const multipart = createMultipartPayload([
+    {
+      name: "audio",
+      value: Buffer.from("test audio"),
+      filename: "chunk.webm",
+      contentType: "audio/webm"
+    },
+    { name: "language", value: "ru" }
+  ]);
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/speech/transcribe",
+    headers: { "content-type": `multipart/form-data; boundary=${multipart.boundary}` },
+    payload: multipart.body
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.json(), { error: "Field 'apiKey' is required." });
+  await app.close();
+});
+
+interface MultipartPart {
+  name: string;
+  value: string | Buffer;
+  filename?: string;
+  contentType?: string;
+}
+
+function createMultipartPayload(parts: MultipartPart[]) {
+  const boundary = "voiceassistant-test-boundary";
+  const buffers: Buffer[] = [];
+
+  for (const part of parts) {
+    buffers.push(Buffer.from(`--${boundary}\r\n`));
+    if (part.filename) {
+      buffers.push(Buffer.from(
+        `Content-Disposition: form-data; name="${part.name}"; filename="${part.filename}"\r\n` +
+        `Content-Type: ${part.contentType ?? "application/octet-stream"}\r\n\r\n`
+      ));
+    } else {
+      buffers.push(Buffer.from(`Content-Disposition: form-data; name="${part.name}"\r\n\r\n`));
+    }
+    buffers.push(Buffer.isBuffer(part.value) ? part.value : Buffer.from(part.value));
+    buffers.push(Buffer.from("\r\n"));
+  }
+
+  buffers.push(Buffer.from(`--${boundary}--\r\n`));
+  return { boundary, body: Buffer.concat(buffers) };
+}

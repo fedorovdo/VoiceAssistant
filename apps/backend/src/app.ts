@@ -1,4 +1,5 @@
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import type {
   AssistantAnswerRequest,
@@ -10,6 +11,7 @@ import type {
 import { classifyTechnicalFragment } from "@voiceassistant/shared";
 import { createAiProvider } from "./providers/createAiProvider.js";
 import { detectTechnicalQuestion } from "./questionDetector.js";
+import { OpenAiSpeechToTextProvider } from "./speech/OpenAiSpeechToTextProvider.js";
 
 const answerModes: AnswerMode[] = ["short", "interview", "learning"];
 const workModes: WorkMode[] = ["manual", "live"];
@@ -22,6 +24,13 @@ export function buildApp() {
 
   app.register(cors, {
     origin: true
+  });
+  app.register(multipart, {
+    limits: {
+      files: 1,
+      fileSize: 10 * 1024 * 1024,
+      fields: 2
+    }
   });
 
   app.get("/health", async () => ({
@@ -86,6 +95,57 @@ export function buildApp() {
       }
     }
   );
+
+  app.post("/api/speech/transcribe", async (request, reply) => {
+    let audio: Buffer | undefined;
+    let filename = "audio.webm";
+    let mimeType = "audio/webm";
+    let apiKey: string | undefined;
+    let language: string | undefined;
+
+    try {
+      for await (const part of request.parts()) {
+        if (part.type === "file") {
+          if (part.fieldname === "audio") {
+            audio = await part.toBuffer();
+            filename = part.filename || filename;
+            mimeType = part.mimetype || mimeType;
+          } else {
+            part.file.resume();
+          }
+          continue;
+        }
+
+        if (part.fieldname === "apiKey") {
+          apiKey = normalizeOptionalString(part.value);
+        } else if (part.fieldname === "language") {
+          language = normalizeOptionalString(part.value);
+        }
+      }
+    } catch (error) {
+      request.log.warn({ err: sanitizeErrorForLogs(error) }, "invalid transcription upload");
+      return reply.status(400).send({ error: "Invalid or oversized multipart audio upload." });
+    }
+
+    if (!audio || audio.length === 0) {
+      return reply.status(400).send({ error: "Field 'audio' is required." });
+    }
+
+    if (!apiKey) {
+      return reply.status(400).send({ error: "Field 'apiKey' is required." });
+    }
+
+    try {
+      const provider = new OpenAiSpeechToTextProvider(apiKey);
+      const text = await provider.transcribe({ audio, filename, mimeType, language });
+      return { text };
+    } catch (error) {
+      request.log.warn({ err: sanitizeErrorForLogs(error) }, "speech transcription provider failed");
+      return reply.status(502).send({
+        error: error instanceof Error ? error.message : "Speech transcription failed."
+      });
+    }
+  });
 
   return app;
 }

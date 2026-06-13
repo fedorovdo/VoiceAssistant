@@ -387,6 +387,11 @@ label {
   font-weight: 650;
 }
 
+.transcription-status {
+  color: #32674a;
+  font-weight: 650;
+}
+
 .settings-field {
   display: grid;
   gap: 7px;

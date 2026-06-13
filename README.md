@@ -36,7 +36,7 @@ Then start the Electron desktop app:
 npm run dev:desktop
 ```
 
-The backend is available at `http://127.0.0.1:8787` with `GET /health` and `POST /api/assistant/answer`.
+The backend is available at `http://127.0.0.1:8787` with `GET /health`, `POST /api/assistant/answer`, and `POST /api/speech/transcribe`.
 
 ## Manual Mode
 
@@ -52,21 +52,24 @@ Live answers are designed for mixed audiences and stay concise. Learning mode ma
 
 Mock STT is a simulation for development. Demo fragments appear only after **Start** is clicked. **Stop** pauses the simulation and **Clear** removes accumulated demo fragments and resets Live Assist duplicate tracking.
 
-Real speech-to-text is not implemented yet. Mock STT remains available for testing recognized fragments and Live Assist behavior.
+Mock STT remains available for testing recognized fragments and Live Assist behavior without using a microphone.
 
-## Microphone Recording Foundation
+## Experimental Microphone STT
 
-The `microphone` provider captures short audio chunks from the selected input device after the user explicitly clicks **Start**. Chunks are produced locally with `MediaRecorder` about every four seconds.
+The `microphone` provider captures short audio chunks from the selected input device after the user explicitly clicks **Start**. Chunks are produced with `MediaRecorder` about every four seconds and sent one at a time to the local backend for OpenAI transcription.
 
-This foundation is for recording diagnostics only:
+Microphone STT is experimental:
 
-- audio chunks stay in memory and are not saved to disk;
-- only chunk count, byte size, and MIME type are shown in the UI;
-- no speech-to-text is performed;
-- no audio is sent to the backend;
-- no audio is sent to OpenAI.
+- an OpenAI API key must be present in desktop settings before audio is uploaded;
+- audio chunks are held in memory and are never saved to disk;
+- the local backend forwards each accepted chunk to OpenAI for transcription;
+- only one transcription request is processed at a time, and extra chunks may be dropped while it is busy;
+- chunk count, byte size, MIME type, and transcription status remain visible in the UI;
+- recognized text is appended to the top dialogue panel.
 
 Clicking **Stop**, changing the STT provider, unmounting the renderer, or closing the app stops the recorder and all active media tracks. If a saved input device is unavailable, the recorder falls back to the system default microphone and displays a warning.
+
+Real microphone transcription does not trigger `/api/assistant/answer` yet. Live Assist automatic answers remain limited to Mock STT in this step.
 
 ## Languages
 
