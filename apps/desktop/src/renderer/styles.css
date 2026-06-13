@@ -105,7 +105,7 @@ button {
 .workspace {
   flex: 1;
   display: grid;
-  grid-template-rows: minmax(260px, 42vh) 1fr;
+  grid-template-rows: minmax(350px, 48vh) minmax(220px, 1fr);
   gap: 18px;
   padding: 24px 28px 28px;
 }
@@ -193,7 +193,7 @@ button {
 textarea {
   flex: 1;
   width: 100%;
-  min-height: 150px;
+  min-height: 100px;
   resize: none;
   border: 0;
   outline: 0;
@@ -277,7 +277,7 @@ textarea {
 }
 
 .answer-panel {
-  min-height: 250px;
+  min-height: 220px;
 }
 
 .answer-meta {

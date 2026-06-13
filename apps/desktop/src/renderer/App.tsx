@@ -6,10 +6,11 @@ import type {
   AssistantAnswerResponse,
   DesktopSettings,
   KnowledgeCard,
+  SanitizedTranscript,
   SpeechToTextProviderId,
   WorkMode
 } from "@voiceassistant/shared";
-import { classifyTechnicalFragment, findKnowledgeCards } from "@voiceassistant/shared";
+import { classifyTechnicalFragment, findKnowledgeCards, sanitizeTranscript } from "@voiceassistant/shared";
 import { createTranslator } from "./i18n.js";
 import { createSpeechToTextProvider } from "./speech/createSpeechToTextProvider.js";
 import type { RecognitionStatus } from "./speech/SpeechToTextProvider.js";
@@ -39,6 +40,7 @@ type PermissionState = "idle" | "requesting" | "success" | "error";
 type PermissionMessage = "unavailable" | "granted" | "denied" | "not_found" | "error" | undefined;
 type LiveFragmentSource = "mock" | "microphone";
 type AnswerSource = "local" | "gpt" | undefined;
+type SttCleanupStatus = "idle" | "accepted" | "skipped" | "waiting";
 
 export function App() {
   const [settings, setSettings] = useState<DesktopSettings>(loadSettings);
@@ -56,16 +58,66 @@ export function App() {
   const [isAsking, setIsAsking] = useState(false);
   const [error, setError] = useState("");
   const [recognitionMessage, setRecognitionMessage] = useState("");
+  const [sttCleanupStatus, setSttCleanupStatus] = useState<SttCleanupStatus>("idle");
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
   const [isRefreshingDevices, setIsRefreshingDevices] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>("permission_hint");
   const [permissionState, setPermissionState] = useState<PermissionState>("idle");
   const [permissionMessage, setPermissionMessage] = useState<PermissionMessage>();
   const liveFragmentHandlerRef = useRef<(fragment: string, source: LiveFragmentSource) => void>(() => undefined);
+  const pendingMicrophoneFragmentsRef = useRef<string[]>([]);
+  const lastAcceptedTranscriptRef = useRef("");
+  const processRecognizedFragment = useCallback((rawText: string, source: LiveFragmentSource) => {
+    const sanitized = sanitizeTranscript(rawText, settings.answerLanguage);
+
+    if (!sanitized.shouldUse && sanitized.reason !== "incomplete") {
+      setSttCleanupStatus("skipped");
+      setRecognitionMessage(t("sttNoiseSkipped"));
+      return;
+    }
+
+    let candidate: SanitizedTranscript = sanitized;
+    if (source === "microphone") {
+      const pendingFragments = pendingMicrophoneFragmentsRef.current;
+      if (sanitized.reason === "incomplete") {
+        const nextFragments = [...pendingFragments, sanitized.text].slice(-2);
+        candidate = sanitizeTranscript(nextFragments.join(" "), settings.answerLanguage);
+        if (!candidate.shouldUse) {
+          pendingMicrophoneFragmentsRef.current = nextFragments;
+          setSttCleanupStatus("waiting");
+          setRecognitionMessage(t("sttWaitingMoreContext"));
+          return;
+        }
+      } else if (pendingFragments.length > 0) {
+        candidate = sanitizeTranscript([...pendingFragments, sanitized.text].join(" "), settings.answerLanguage);
+        if (!candidate.shouldUse) {
+          pendingMicrophoneFragmentsRef.current = [...pendingFragments, sanitized.text].slice(-2);
+          setSttCleanupStatus(candidate.reason === "incomplete" ? "waiting" : "skipped");
+          setRecognitionMessage(candidate.reason === "incomplete" ? t("sttWaitingMoreContext") : t("sttNoiseSkipped"));
+          return;
+        }
+      }
+
+      pendingMicrophoneFragmentsRef.current = [];
+    }
+
+    const normalizedCandidate = normalizeTranscriptForComparison(candidate.text);
+    const previousTranscript = lastAcceptedTranscriptRef.current;
+    if (!normalizedCandidate || normalizedCandidate === previousTranscript || previousTranscript.endsWith(normalizedCandidate)) {
+      setSttCleanupStatus("skipped");
+      setRecognitionMessage(t("sttNoiseSkipped"));
+      return;
+    }
+
+    lastAcceptedTranscriptRef.current = normalizedCandidate;
+    setRecognizedText((currentText) => appendRecognizedText(currentText, candidate.text));
+    setSttCleanupStatus("accepted");
+    setRecognitionMessage("");
+    liveFragmentHandlerRef.current(candidate.text, source);
+  }, [settings.answerLanguage, t]);
   const handleTranscript = useCallback((text: string) => {
-    setRecognizedText((currentText) => appendRecognizedText(currentText, text));
-    liveFragmentHandlerRef.current(text, "microphone");
-  }, []);
+    processRecognizedFragment(text, "microphone");
+  }, [processRecognizedFragment]);
   const chunkTranscription = useChunkTranscription({
     backendUrl,
     apiKey: settings.apiKey,
@@ -249,7 +301,10 @@ export function App() {
     microphoneRecorder.stop();
     setRecognitionStatus("stopped");
     setRecognitionMessage("");
-  }, [settings.speechToTextProvider, speechToTextProvider, microphoneRecorder.stop, chunkTranscription.stopSession]);
+    setSttCleanupStatus("idle");
+    pendingMicrophoneFragmentsRef.current = [];
+    lastAcceptedTranscriptRef.current = "";
+  }, [settings.answerLanguage, settings.speechToTextProvider, speechToTextProvider, microphoneRecorder.stop, chunkTranscription.stopSession]);
   useEffect(() => () => {
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
@@ -259,6 +314,8 @@ export function App() {
   async function startListening() {
     setError("");
     setRecognitionMessage("");
+    setSttCleanupStatus("idle");
+    pendingMicrophoneFragmentsRef.current = [];
 
     if (settings.speechToTextProvider === "microphone") {
       chunkTranscription.startSession();
@@ -275,8 +332,7 @@ export function App() {
     speechToTextProvider.start({
       onResult: (result) => {
         if (!result.isFinal) return;
-        setRecognizedText((currentText) => appendRecognizedText(currentText, result.text));
-        queueLiveAnswer(result.text, "mock");
+        processRecognizedFragment(result.text, "mock");
       },
       onStatusChange: setRecognitionStatus
     });
@@ -286,11 +342,15 @@ export function App() {
     speechToTextProvider?.stop();
     chunkTranscription.stopSession();
     microphoneRecorder.stop();
+    pendingMicrophoneFragmentsRef.current = [];
   }
 
   function clearRecognizedText() {
     setRecognizedText("");
     setRecognitionMessage("");
+    setSttCleanupStatus("idle");
+    pendingMicrophoneFragmentsRef.current = [];
+    lastAcceptedTranscriptRef.current = "";
     answeredFragmentsRef.current.clear();
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
@@ -428,6 +488,9 @@ export function App() {
               <div className={chunkTranscription.status === "error" || chunkTranscription.status === "missing_api_key" ? "recorder-warning" : "transcription-status"}>
                 {t("transcriptionStatus")}: {getTranscriptionStatusText(chunkTranscription.status, t)}
               </div>
+              <div className={sttCleanupStatus === "skipped" ? "recorder-warning" : "transcription-status"}>
+                {t("sttCleanupStatus")}: {getSttCleanupStatusText(sttCleanupStatus, t)}
+              </div>
               {microphoneRecorder.usedDefaultDevice ? <div className="recorder-warning">{t("defaultDeviceFallback")}</div> : null}
             </div>
           ) : null}
@@ -540,7 +603,19 @@ function isSpeechProvider(value: unknown): value is SpeechToTextProviderId { ret
 
 function appendRecognizedText(currentText: string, phrase: string): string {
   const trimmed = currentText.trim();
-  return trimmed ? `${trimmed}\n${phrase}` : phrase;
+  const cleanedPhrase = phrase.trim();
+  if (!cleanedPhrase) return trimmed;
+
+  const normalizedPhrase = normalizeTranscriptForComparison(cleanedPhrase);
+  const lastLine = trimmed.split("\n").at(-1) ?? "";
+  const normalizedLastLine = normalizeTranscriptForComparison(lastLine);
+  if (normalizedLastLine === normalizedPhrase || normalizedLastLine.endsWith(normalizedPhrase)) return trimmed;
+
+  return trimmed ? `${trimmed}\n${cleanedPhrase}` : cleanedPhrase;
+}
+
+function normalizeTranscriptForComparison(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function getAudioDeviceLabel(device: MediaDeviceInfo, index: number): string {
@@ -596,6 +671,16 @@ function getTranscriptionStatusText(
   if (status === "missing_api_key") return t("apiKeyRequiredForSpeechRecognition");
   if (status === "error") return t("transcriptionError");
   return t("stopped");
+}
+
+function getSttCleanupStatusText(
+  status: SttCleanupStatus,
+  t: ReturnType<typeof createTranslator>
+): string {
+  if (status === "accepted") return t("sttCleanupAccepted");
+  if (status === "skipped") return t("sttCleanupSkipped");
+  if (status === "waiting") return t("sttCleanupWaiting");
+  return t("sttCleanupIdle");
 }
 
 function formatKnowledgeCards(cards: KnowledgeCard[], language: AppLanguage): string {

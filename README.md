@@ -115,12 +115,16 @@ The `microphone` provider captures short audio chunks from the selected input de
 Microphone STT is experimental:
 
 - an OpenAI API key must be present in desktop settings before audio is uploaded;
+- recognized text passes through local noise filtering before it is appended or considered by Live Assist;
+- short filler, unsupported-script noise, duplicates, and likely incomplete questions may be skipped or briefly buffered for more context;
 - audio chunks are held in memory and are never saved to disk;
 - the local backend forwards each accepted chunk to OpenAI for transcription;
 - only one transcription request is processed at a time, and extra chunks may be dropped while it is busy;
 - chunk count, byte size, MIME type, and transcription status remain visible in the UI;
-- recognized text is appended to the top dialogue panel;
+- accepted, cleaned text is appended to the top dialogue panel;
 - in Live Assist mode, recognized technical fragments can automatically produce an explanation in the answer panel.
+
+Recognition quality still depends on speech clarity, microphone quality, and the surrounding environment. Skipping noisy or incomplete fragments is intentional so Live Assist does not answer accidental transcription output.
 
 Clicking **Stop**, changing the STT provider, unmounting the renderer, or closing the app stops the recorder and all active media tracks. If a saved input device is unavailable, the recorder falls back to the system default microphone and displays a warning.
 
