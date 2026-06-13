@@ -6,6 +6,7 @@ import type {
   AssistantAnswerResponse,
   DesktopSettings,
   KnowledgeCard,
+  LayoutMode,
   SanitizedTranscript,
   SpeechToTextProviderId,
   WorkMode
@@ -18,6 +19,7 @@ import { useChunkTranscription } from "./speech/useChunkTranscription.js";
 import type { TranscriptionStatus } from "./speech/useChunkTranscription.js";
 import { useMicrophoneRecorder } from "./speech/useMicrophoneRecorder.js";
 import type { MicrophoneRecorderStatus } from "./speech/useMicrophoneRecorder.js";
+import { normalizeSplitterRatio, usePanelSplitter } from "./usePanelSplitter.js";
 
 const defaultSettings: DesktopSettings = {
   apiKey: "",
@@ -27,10 +29,12 @@ const defaultSettings: DesktopSettings = {
   audioInputDeviceId: "",
   answerMode: "short",
   workMode: "manual",
+  layoutMode: "vertical",
   speechToTextProvider: "mock"
 };
 
 const settingsStorageKey = "voiceassistant.settings";
+const splitterRatioStorageKey = "voiceassistant.splitterRatio";
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8787";
 const liveDebounceMs = 650;
 const liveThrottleMs = 2000;
@@ -44,6 +48,7 @@ type SttCleanupStatus = "idle" | "accepted" | "skipped" | "waiting";
 
 export function App() {
   const [settings, setSettings] = useState<DesktopSettings>(loadSettings);
+  const [splitterRatio, setSplitterRatio] = useState(loadSplitterRatio);
   const t = useMemo(() => createTranslator(settings.interfaceLanguage), [settings.interfaceLanguage]);
   const speechToTextProvider = useMemo(
     () => createSpeechToTextProvider(settings.speechToTextProvider),
@@ -132,6 +137,16 @@ export function App() {
   const requestInFlightRef = useRef(false);
   const isMicrophoneActive = microphoneRecorder.status === "recording" || microphoneRecorder.status === "requesting_permission";
   const isListening = recognitionStatus === "listening" || isMicrophoneActive;
+
+  const persistSplitterRatio = useCallback((ratio: number) => {
+    localStorage.setItem(splitterRatioStorageKey, String(ratio));
+  }, []);
+  const panelSplitter = usePanelSplitter({
+    mode: settings.layoutMode,
+    ratio: splitterRatio,
+    onRatioChange: setSplitterRatio,
+    onRatioCommit: persistSplitterRatio
+  });
 
   const statusText = getMainStatusText(settings.speechToTextProvider, recognitionStatus, microphoneRecorder.status, t);
 
@@ -453,7 +468,11 @@ export function App() {
         <span className="status-note">{settings.speechToTextProvider === "microphone" ? t("experimentalStt") : t("microphoneSttAvailable")}</span>
       </div>
 
-      <section className="workspace">
+      <section
+        className={`workspace layout-${settings.layoutMode}`}
+        ref={panelSplitter.containerRef}
+        style={panelSplitter.splitterStyle}
+      >
         <div className="panel recognized-panel">
           <div className="panel-header">
             <div>
@@ -503,6 +522,23 @@ export function App() {
             <div className="input-device"><Mic size={16} /><span>{selectedAudioDeviceLabel}</span></div>
             {settings.workMode === "live" ? <span className="live-ready">{t("liveReady")}</span> : null}
           </div>
+        </div>
+
+        <div
+          className="panel-splitter"
+          role="separator"
+          aria-label={t("resizePanels")}
+          aria-orientation={settings.layoutMode === "vertical" ? "horizontal" : "vertical"}
+          aria-valuemin={20}
+          aria-valuemax={80}
+          aria-valuenow={Math.round(splitterRatio * 100)}
+          tabIndex={0}
+          title={t("splitterHint")}
+          onPointerDown={panelSplitter.onPointerDown}
+          onDoubleClick={panelSplitter.onDoubleClick}
+          onKeyDown={panelSplitter.onKeyDown}
+        >
+          <span />
         </div>
 
         <div className="panel answer-panel">
@@ -569,6 +605,7 @@ export function App() {
             </div>
 
             <div className="settings-field"><label htmlFor="work-mode">{t("workMode")}</label><select id="work-mode" value={settings.workMode} onChange={(event) => setSettings({ ...settings, workMode: event.target.value as WorkMode })}><option value="manual">{t("manual")}</option><option value="live">{t("live")}</option></select></div>
+            <div className="settings-field"><label htmlFor="layout-mode">{t("layoutMode")}</label><select id="layout-mode" value={settings.layoutMode} onChange={(event) => setSettings({ ...settings, layoutMode: event.target.value as LayoutMode })}><option value="vertical">{t("verticalLayout")}</option><option value="horizontal">{t("horizontalLayout")}</option></select></div>
             <div className="settings-field"><label htmlFor="speech-provider">{t("speechProvider")}</label><select id="speech-provider" value={settings.speechToTextProvider} onChange={(event) => setSettings({ ...settings, speechToTextProvider: event.target.value as SpeechToTextProviderId })}><option value="disabled">{t("disabled")}</option><option value="mock">{t("mockSimulated")}</option><option value="microphone">{t("microphoneProvider")}</option></select></div>
             <div className="settings-field"><label htmlFor="interface-language">{t("interfaceLanguage")}</label><select id="interface-language" value={settings.interfaceLanguage} onChange={(event) => setSettings({ ...settings, interfaceLanguage: event.target.value as AppLanguage })}><option value="ru">{t("russian")}</option><option value="en">{t("english")}</option></select></div>
             <div className="settings-field"><label htmlFor="answer-language">{t("answerLanguage")}</label><select id="answer-language" value={settings.answerLanguage} onChange={(event) => setSettings({ ...settings, answerLanguage: event.target.value as AppLanguage })}><option value="ru">{t("russian")}</option><option value="en">{t("english")}</option></select></div>
@@ -595,6 +632,7 @@ function loadSettings(): DesktopSettings {
       audioInputDeviceId: typeof parsed.audioInputDeviceId === "string" ? parsed.audioInputDeviceId : "",
       answerMode: isAnswerMode(parsed.answerMode) ? parsed.answerMode : defaultSettings.answerMode,
       workMode: isWorkMode(parsed.workMode) ? parsed.workMode : defaultSettings.workMode,
+      layoutMode: isLayoutMode(parsed.layoutMode) ? parsed.layoutMode : defaultSettings.layoutMode,
       speechToTextProvider: isSpeechProvider(parsed.speechToTextProvider) ? parsed.speechToTextProvider : defaultSettings.speechToTextProvider
     };
   } catch {
@@ -605,7 +643,13 @@ function loadSettings(): DesktopSettings {
 function isLanguage(value: unknown): value is AppLanguage { return value === "ru" || value === "en"; }
 function isAnswerMode(value: unknown): value is AnswerMode { return value === "short" || value === "interview" || value === "learning"; }
 function isWorkMode(value: unknown): value is WorkMode { return value === "manual" || value === "live"; }
+function isLayoutMode(value: unknown): value is LayoutMode { return value === "vertical" || value === "horizontal"; }
 function isSpeechProvider(value: unknown): value is SpeechToTextProviderId { return value === "disabled" || value === "mock" || value === "microphone"; }
+
+function loadSplitterRatio(): number {
+  const storedRatio = localStorage.getItem(splitterRatioStorageKey);
+  return storedRatio === null ? normalizeSplitterRatio(undefined) : normalizeSplitterRatio(Number(storedRatio));
+}
 
 function appendRecognizedText(currentText: string, phrase: string): string {
   const trimmed = currentText.trim();

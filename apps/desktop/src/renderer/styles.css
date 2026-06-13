@@ -13,7 +13,9 @@
 body {
   margin: 0;
   min-width: 720px;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 560px;
+  overflow: hidden;
 }
 
 button,
@@ -28,9 +30,11 @@ button {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .top-bar {
@@ -104,10 +108,69 @@ button {
 
 .workspace {
   flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-rows: minmax(350px, 48vh) minmax(220px, 1fr);
-  gap: 18px;
+  gap: 0;
   padding: 24px 28px 28px;
+  overflow: hidden;
+}
+
+.workspace.layout-vertical {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(150px, var(--panel-primary-size)) 10px minmax(150px, 1fr);
+}
+
+.workspace.layout-horizontal {
+  grid-template-columns: minmax(260px, var(--panel-primary-size)) 10px minmax(260px, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.panel-splitter {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: 0;
+  touch-action: none;
+  user-select: none;
+}
+
+.panel-splitter span {
+  display: block;
+  border-radius: 999px;
+  background: #c6d0dc;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.layout-vertical .panel-splitter {
+  cursor: row-resize;
+}
+
+.layout-vertical .panel-splitter span {
+  width: 44px;
+  height: 3px;
+}
+
+.layout-horizontal .panel-splitter {
+  cursor: col-resize;
+}
+
+.layout-horizontal .panel-splitter span {
+  width: 3px;
+  height: 44px;
+}
+
+.panel-splitter:hover span,
+.panel-splitter:focus-visible span,
+.is-resizing-panels .panel-splitter span {
+  background: #6486ad;
+  box-shadow: 0 0 0 3px rgb(100 134 173 / 14%);
+}
+
+.is-resizing-panels,
+.is-resizing-panels * {
+  user-select: none;
 }
 
 .assist-status-line {
@@ -277,7 +340,7 @@ textarea {
 }
 
 .answer-panel {
-  min-height: 220px;
+  min-height: 0;
 }
 
 .answer-meta {
@@ -575,5 +638,9 @@ select {
 
   .live-ready {
     text-align: left;
+  }
+
+  .workspace.layout-horizontal {
+    grid-template-columns: minmax(220px, var(--panel-primary-size)) 10px minmax(220px, 1fr);
   }
 }

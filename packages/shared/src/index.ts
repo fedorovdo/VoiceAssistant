@@ -4,6 +4,8 @@ export type AppLanguage = "ru" | "en";
 
 export type WorkMode = "manual" | "live";
 
+export type LayoutMode = "vertical" | "horizontal";
+
 export type SpeechToTextProviderId = "disabled" | "mock" | "microphone";
 
 export interface AssistantAnswerRequest {
@@ -27,6 +29,7 @@ export interface DesktopSettings {
   audioInputDeviceId: string;
   answerMode: AnswerMode;
   workMode: WorkMode;
+  layoutMode: LayoutMode;
   speechToTextProvider: SpeechToTextProviderId;
 }
 

@@ -86,6 +86,8 @@ Windows packaging is experimental. The portable executable is currently unsigned
 
 Manual mode keeps the user in control. Type text, start Mock STT, or transcribe microphone audio, then review the recognized dialogue and click **Ask** in the panel controls. Manual Ask is an explicit user-confirmed action, so it accepts cleaned non-empty text even when it is a command phrase rather than a formal question. It checks local knowledge first, then uses GPT fallback or enrichment when an API key is configured. The button remains available for disabled, mock, and microphone STT providers.
 
+The desktop workspace supports **Vertical** and **Horizontal** panel layouts. Choose the layout in Settings, then drag the splitter between recognized dialogue and the assistant answer to resize the panels. Double-click the splitter to restore an even 50/50 split; the selected layout and splitter ratio are saved locally.
+
 ## Live Assist Mode
 
 Live Assist remains conservative: it classifies each completed Mock STT or microphone transcript as an explicit technical question, a technical term, or ignored conversation. Only suitable fragments are answered automatically, with debounce, throttling, duplicate prevention, and no parallel answer requests.
