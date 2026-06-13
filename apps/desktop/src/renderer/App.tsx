@@ -223,6 +223,12 @@ export function App() {
         }
       }
 
+      if (!settings.apiKey.trim()) {
+        setError(t("localKnowledgeMissApiKey"));
+        if (source === "microphone") setRecognitionMessage("");
+        return;
+      }
+
       const sent = await requestAnswer(fragment, "live", knowledgeMatches.length > 0);
       if (!sent) {
         answeredFragmentsRef.current.delete(detection.normalizedText);
@@ -293,15 +299,31 @@ export function App() {
   }
 
   async function askManually() {
-    const knowledgeMatches = findKnowledgeCards(recognizedText);
+    const trimmedText = recognizedText.trim();
+    if (!trimmedText) {
+      setError(t("manualTextRequired"));
+      return;
+    }
+
+    setError("");
+    const knowledgeMatches = findKnowledgeCards(trimmedText);
     if (knowledgeMatches.length > 0) {
       showLocalAnswer(knowledgeMatches);
-      if (!settings.apiKey.trim()) {
+      const shouldEnrich = settings.apiKey.trim().length > 0 && settings.answerMode !== "short";
+      if (!shouldEnrich) {
         return;
       }
     }
 
-    await requestAnswer(recognizedText, "manual", knowledgeMatches.length > 0);
+    if (!settings.apiKey.trim()) {
+      setAnswer("");
+      setLocalAnswerCards([]);
+      setAnswerSource(undefined);
+      setError(t("localKnowledgeMissApiKey"));
+      return;
+    }
+
+    await requestAnswer(trimmedText, "manual", knowledgeMatches.length > 0);
   }
 
   async function requestMicrophonePermission() {
@@ -383,6 +405,11 @@ export function App() {
               <button className="secondary-button" type="button" onClick={clearRecognizedText} disabled={!recognizedText}>
                 <Trash2 size={18} />{t("clear")}
               </button>
+              {settings.workMode === "manual" ? (
+                <button className="ask-button" type="button" onClick={() => void askManually()} disabled={isAsking}>
+                  <Send size={18} />{isAsking ? t("asking") : t("ask")}
+                </button>
+              ) : null}
             </div>
           </div>
           <textarea value={recognizedText} onChange={(event) => setRecognizedText(event.target.value)} placeholder={t("recognizedPlaceholder")} />
@@ -406,11 +433,7 @@ export function App() {
           ) : null}
           <div className="actions-row">
             <div className="input-device"><Mic size={16} /><span>{selectedAudioDeviceLabel}</span></div>
-            {settings.workMode === "manual" ? (
-              <button className="ask-button" type="button" onClick={() => void askManually()} disabled={isAsking || !recognizedText.trim()}>
-                <Send size={18} />{isAsking ? t("asking") : t("ask")}
-              </button>
-            ) : <span className="live-ready">{t("liveReady")}</span>}
+            {settings.workMode === "live" ? <span className="live-ready">{t("liveReady")}</span> : null}
           </div>
         </div>
 

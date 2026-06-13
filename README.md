@@ -84,7 +84,7 @@ Windows packaging is experimental. The portable executable is currently unsigned
 
 ## Manual Mode
 
-Manual mode keeps the user in control. Type text, start Mock STT, or transcribe microphone audio, then review the recognized dialogue and click **Ask** to request an answer. Microphone transcripts never trigger automatic answers in manual mode.
+Manual mode keeps the user in control. Type text, start Mock STT, or transcribe microphone audio, then review the recognized dialogue and click **Ask** in the panel controls. The button remains available for disabled, mock, and microphone STT providers. Microphone transcripts never trigger automatic answers in manual mode.
 
 ## Live Assist Mode
 
@@ -96,7 +96,7 @@ Live answers are designed for mixed audiences and stay concise. Learning mode ma
 
 VoiceAssistant includes a small in-memory catalog of common Linux, Docker, Kubernetes, networking, Active Directory, DNS, and DHCP explanations. Cards contain concise notes, practical bullets, useful commands, aliases, and related terms.
 
-Manual Ask and Live Assist check these cards before waiting for GPT. A matching card is shown immediately with the source label **local knowledge**, and it works without an API key. When an API key is configured, GPT can replace or enrich the local result; Live Assist only requests enrichment for interview and learning answer modes.
+Manual Ask and Live Assist check these cards before waiting for GPT. A matching card is shown immediately with the source label **local knowledge**, and it works without an API key. In interview and learning modes, a configured GPT provider may enrich that result while the local card stays visible; the source changes clearly when the GPT response arrives. Without a local match, an API key is required for a GPT answer.
 
 Matching is conservative and normalizes Russian and English aliases. Short generic words such as `pod` or `free` require question or technical context to avoid noisy answers.
 
