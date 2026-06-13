@@ -94,11 +94,13 @@ Live answers are designed for mixed audiences and stay concise. Learning mode ma
 
 ## Local Knowledge Cards
 
-VoiceAssistant includes a small in-memory catalog of common Linux, Docker, Kubernetes, networking, Active Directory, DNS, and DHCP explanations. Cards contain concise notes, practical bullets, useful commands, aliases, and related terms.
+VoiceAssistant includes an in-memory practical command reference for Linux, Docker, Kubernetes, networking, Active Directory, DNS, and DHCP. It covers common operations such as service and log diagnostics, filesystems and permissions, Docker Compose, kubectl troubleshooting, port and DNS checks, Group Policy, domain controller health, and AD replication. Cards contain concise Russian explanations, practical bullets, commands, Russian and English aliases, and related terms.
 
 Manual Ask and Live Assist check these cards before waiting for GPT. A matching card is shown immediately with the source label **local knowledge**, and it works without an API key. In interview and learning modes, a configured GPT provider may enrich that result while the local card stays visible; the source changes clearly when the GPT response arrives. Without a local match, an API key is required for a GPT answer.
 
 Matching is conservative and normalizes Russian and English aliases. Short generic words such as `pod` or `free` require question or technical context to avoid noisy answers.
+
+The matcher returns only the top one or two practical cards so command answers remain compact during a conversation. The reference works without an API key; GPT enrichment remains optional when configured.
 
 This is an MVP reference catalog stored in TypeScript. It is not yet a document database, search index, or user-editable knowledge base.
 
