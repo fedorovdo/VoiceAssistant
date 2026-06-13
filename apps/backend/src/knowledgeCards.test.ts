@@ -21,6 +21,14 @@ test("findKnowledgeCards covers practical admin commands", () => {
   assert.equal(findKnowledgeCards("проверить порт telnet")[0]?.id, "network-telnet-port");
 });
 
+test("findKnowledgeCards matches user-confirmed Linux command phrases", () => {
+  assert.equal(findKnowledgeCards("Команда Linux посмотреть место на диске.")[0]?.id, "linux-df");
+  assert.equal(findKnowledgeCards("Команда Linux задать права на исполнение.")[0]?.id, "linux-chmod");
+  assert.equal(findKnowledgeCards("Права на исполнение файла командной строки.")[0]?.id, "linux-chmod");
+  assert.equal(findKnowledgeCards("chmod +x script.sh")[0]?.id, "linux-chmod");
+  assert.equal(findKnowledgeCards("chown")[0]?.id, "linux-chown");
+});
+
 test("findKnowledgeCards returns the most relevant related cards", () => {
   const results = findKnowledgeCards("Чем Kubernetes service отличается от ingress?");
   assert.deepEqual(results.map((card) => card.id), ["kubernetes-service", "kubernetes-ingress"]);

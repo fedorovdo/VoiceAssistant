@@ -10,7 +10,6 @@ import type {
 } from "@voiceassistant/shared";
 import { classifyTechnicalFragment } from "@voiceassistant/shared";
 import { createAiProvider } from "./providers/createAiProvider.js";
-import { detectTechnicalQuestion } from "./questionDetector.js";
 import { OpenAiSpeechToTextProvider } from "./speech/OpenAiSpeechToTextProvider.js";
 
 const answerModes: AnswerMode[] = ["short", "interview", "learning"];
@@ -63,13 +62,10 @@ export function buildApp() {
         return reply.status(400).send({ error: "Field 'answerLanguage' must be ru or en." });
       }
 
-      const detection = detectTechnicalQuestion(text);
-      const liveDetection = classifyTechnicalFragment(text);
-      const isUseful = workMode === "live"
-        ? liveDetection.classification !== "ignore"
-        : detection.isUseful;
+      const normalizedManualText = text.replace(/\s+/g, " ").trim();
+      const liveDetection = workMode === "live" ? classifyTechnicalFragment(text) : undefined;
 
-      if (!isUseful) {
+      if (workMode === "live" && liveDetection?.classification === "ignore") {
         return {
           answer: answerLanguage === "en"
             ? "This does not look like a technical question, or the fragment was filtered as non-useful text."
@@ -80,7 +76,7 @@ export function buildApp() {
       try {
         const aiProvider = createAiProvider({ apiKey, model });
         const answer = await aiProvider.answer({
-          text: workMode === "live" ? liveDetection.normalizedText : detection.normalizedText,
+          text: workMode === "live" ? liveDetection?.normalizedText ?? normalizedManualText : normalizedManualText,
           mode,
           workMode,
           answerLanguage

@@ -84,11 +84,11 @@ Windows packaging is experimental. The portable executable is currently unsigned
 
 ## Manual Mode
 
-Manual mode keeps the user in control. Type text, start Mock STT, or transcribe microphone audio, then review the recognized dialogue and click **Ask** in the panel controls. The button remains available for disabled, mock, and microphone STT providers. Microphone transcripts never trigger automatic answers in manual mode.
+Manual mode keeps the user in control. Type text, start Mock STT, or transcribe microphone audio, then review the recognized dialogue and click **Ask** in the panel controls. Manual Ask is an explicit user-confirmed action, so it accepts cleaned non-empty text even when it is a command phrase rather than a formal question. It checks local knowledge first, then uses GPT fallback or enrichment when an API key is configured. The button remains available for disabled, mock, and microphone STT providers.
 
 ## Live Assist Mode
 
-Live Assist classifies each completed Mock STT or microphone transcript as an explicit technical question, a technical term, or ignored conversation. Matching fragments are sent automatically to the existing answer endpoint with debounce, throttling, duplicate prevention, and no parallel answer requests.
+Live Assist remains conservative: it classifies each completed Mock STT or microphone transcript as an explicit technical question, a technical term, or ignored conversation. Only suitable fragments are answered automatically, with debounce, throttling, duplicate prevention, and no parallel answer requests.
 
 Live answers are designed for mixed audiences and stay concise. Learning mode may provide a longer explanation.
 

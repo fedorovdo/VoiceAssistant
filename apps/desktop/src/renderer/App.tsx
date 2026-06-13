@@ -56,6 +56,7 @@ export function App() {
   const [recognitionStatus, setRecognitionStatus] = useState<RecognitionStatus>("stopped");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAsking, setIsAsking] = useState(false);
+  const [isSearchingLocal, setIsSearchingLocal] = useState(false);
   const [error, setError] = useState("");
   const [recognitionMessage, setRecognitionMessage] = useState("");
   const [sttCleanupStatus, setSttCleanupStatus] = useState<SttCleanupStatus>("idle");
@@ -359,14 +360,18 @@ export function App() {
   }
 
   async function askManually() {
-    const trimmedText = recognizedText.trim();
-    if (!trimmedText) {
+    const sanitizedManualText = sanitizeTranscript(recognizedText, settings.answerLanguage).text;
+    if (!sanitizedManualText) {
       setError(t("manualTextRequired"));
       return;
     }
 
     setError("");
-    const knowledgeMatches = findKnowledgeCards(trimmedText);
+    setIsSearchingLocal(true);
+    await showLocalSearchFeedback();
+    const knowledgeMatches = findKnowledgeCards(sanitizedManualText);
+    setIsSearchingLocal(false);
+
     if (knowledgeMatches.length > 0) {
       showLocalAnswer(knowledgeMatches);
       const shouldEnrich = settings.apiKey.trim().length > 0 && settings.answerMode !== "short";
@@ -383,7 +388,7 @@ export function App() {
       return;
     }
 
-    await requestAnswer(trimmedText, "manual", knowledgeMatches.length > 0);
+    await requestAnswer(sanitizedManualText, "manual", knowledgeMatches.length > 0);
   }
 
   async function requestMicrophonePermission() {
@@ -466,7 +471,7 @@ export function App() {
                 <Trash2 size={18} />{t("clear")}
               </button>
               {settings.workMode === "manual" ? (
-                <button className="ask-button" type="button" onClick={() => void askManually()} disabled={isAsking}>
+                <button className="ask-button" type="button" onClick={() => void askManually()} disabled={isAsking || isSearchingLocal}>
                   <Send size={18} />{isAsking ? t("asking") : t("ask")}
                 </button>
               ) : null}
@@ -511,6 +516,7 @@ export function App() {
             </div>
           </div>
           {error ? <div className="error-message">{error}</div> : null}
+          {isSearchingLocal ? <div className="local-search-status">{t("searchingLocalKnowledge")}</div> : null}
           {answerSource === "local" && localAnswerCards.length > 0 ? (
             <div className="local-knowledge-answer">
               {localAnswerCards.map((knowledgeCard) => (
@@ -616,6 +622,11 @@ function appendRecognizedText(currentText: string, phrase: string): string {
 
 function normalizeTranscriptForComparison(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+async function showLocalSearchFeedback(): Promise<void> {
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 120));
 }
 
 function getAudioDeviceLabel(device: MediaDeviceInfo, index: number): string {

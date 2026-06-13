@@ -366,6 +366,13 @@ textarea {
   font-weight: 650;
 }
 
+.local-search-status {
+  margin: 14px 20px 0;
+  color: #526173;
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .answer-text {
   flex: 1;
   margin: 0;
