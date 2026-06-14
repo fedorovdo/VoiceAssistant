@@ -246,6 +246,12 @@ button {
   font-weight: 550;
 }
 
+.normalized-terms-note {
+  color: #35674b;
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .status-note {
   color: #74747a;
   font-size: 11px;

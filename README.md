@@ -98,6 +98,8 @@ Live Assist also keeps a lightweight in-memory context of up to ten recent accep
 
 Conversation context exists only in renderer memory. It is cleared by the **Clear** action and is never written to disk or added to the microphone upload.
 
+For Russian speech, accepted STT fragments also pass through a conservative technical-term normalizer. Common spoken or distorted forms such as `Кубернетес`, `кубси тейл`, `докер образ`, and `журнал контрол` are converted to canonical terms before topic detection, local knowledge matching, and GPT prompting. Only the normalized text and an in-memory replacement summary are retained; this context is not saved to disk.
+
 ## Local Knowledge Cards
 
 VoiceAssistant includes an expanded in-memory practical command reference for Linux troubleshooting, Docker and Docker Compose, Kubernetes, networking, Windows and Active Directory, Proxmox, and Git. It covers service and log diagnostics, filesystems and permissions, containers and images, kubectl troubleshooting, port and DNS checks, Group Policy and AD replication, virtualization storage, backups, and everyday version-control commands. Cards contain concise Russian explanations, practical bullets, commands, Russian and English aliases, and related terms.
@@ -134,6 +136,7 @@ Microphone STT is experimental:
 
 - an OpenAI API key must be present in desktop settings before audio is uploaded;
 - recognized text passes through local noise filtering before it is appended or considered by Live Assist;
+- common Russian STT distortions of technical terms are normalized before topic detection and local matching;
 - short filler, unsupported-script noise, duplicates, and likely incomplete questions may be skipped or briefly buffered for more context;
 - audio chunks are held in memory and are never saved to disk;
 - the local backend forwards each accepted chunk to OpenAI for transcription;

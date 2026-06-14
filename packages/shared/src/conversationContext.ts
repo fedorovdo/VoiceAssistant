@@ -52,8 +52,8 @@ export interface ConversationContextOptions {
 
 const topicTerms: Record<TechnicalTopic, string[]> = {
   "Docker Compose": ["docker compose", "docker-compose", "compose.yaml", "compose.yml"],
-  Kubernetes: ["kubernetes", "k8s", "kubectl", "helm", "ingress", "deployment", "statefulset", "namespace", "кластер kubernetes", "кластер k8s"],
-  "Active Directory": ["active directory", "domain controller", "group policy", "gpo", "dcdiag", "repadmin", "fsmo", "контроллер домена", "групповая политика"],
+  Kubernetes: ["kubernetes", "k8s", "kubectl", "scheduler", "helm", "ingress", "deployment", "statefulset", "namespace", "кластер kubernetes", "кластер k8s"],
+  "Active Directory": ["active directory", "domain controller", "group policy", "gpo", "gpupdate", "dcdiag", "repadmin", "fsmo", "контроллер домена", "групповая политика"],
   "DNS/DHCP": ["dns", "dhcp", "nslookup", "dig", "dns-запись", "dns запись", "dhcp lease", "аренда dhcp"],
   Proxmox: ["proxmox", "pve", "pvesm", "vzdump", "qm command", "qm list"],
   Docker: ["docker", "dockerfile", "docker image", "container", "registry", "контейнер", "образ docker"],
@@ -80,10 +80,12 @@ const explanatoryIntentPatterns = [
   /для чего (?:нужен|нужна|нужно|нужны)/i,
   /чем отличается/i,
   /из чего состоит/i,
+  /что делает/i,
   /объясни(?:те)?/i,
   /поясни(?:те)?/i,
   /расскажи(?:те)?/i,
   /\bwhat is\b/i,
+  /\bwhat does\b/i,
   /\bhow does\b/i,
   /\bexplain\b/i,
   /\btell me about\b/i
@@ -93,6 +95,7 @@ const commandIntentPatterns = [
   /как (?:проверить|настроить|посмотреть|узнать|найти|запустить|остановить|перезапустить|сделать)/i,
   /(?:какая|какой|какую) команд[ауой]/i,
   /команда для/i,
+  /команд(?:а|ы)\s+(?:для\s+)?[a-zа-я]/i,
   /помоги(?:те)?/i,
   /\bhow to\b/i,
   /\bcommand (?:for|to)\b/i,

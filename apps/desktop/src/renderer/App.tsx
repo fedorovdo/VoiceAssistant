@@ -17,6 +17,7 @@ import {
   ConversationContextBuffer,
   findKnowledgeCards,
   migrateDesktopSettings,
+  normalizeTechnicalTerms,
   resolveAnswerSource,
   sanitizeTranscript,
   shouldSearchLocalKnowledge
@@ -77,6 +78,7 @@ export function App() {
   const [isSearchingLocal, setIsSearchingLocal] = useState(false);
   const [error, setError] = useState("");
   const [recognitionMessage, setRecognitionMessage] = useState("");
+  const [normalizedTerms, setNormalizedTerms] = useState<string[]>([]);
   const [sttCleanupStatus, setSttCleanupStatus] = useState<SttCleanupStatus>("idle");
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
   const [isRefreshingDevices, setIsRefreshingDevices] = useState(false);
@@ -125,7 +127,9 @@ export function App() {
       pendingMicrophoneFragmentsRef.current = [];
     }
 
-    const normalizedCandidate = normalizeTranscriptForComparison(candidate.text);
+    const technicalText = normalizeTechnicalTerms(candidate.text);
+    const acceptedText = technicalText.text;
+    const normalizedCandidate = normalizeTranscriptForComparison(acceptedText);
     const previousTranscript = lastAcceptedTranscriptRef.current;
     if (!normalizedCandidate || normalizedCandidate === previousTranscript || previousTranscript.endsWith(normalizedCandidate)) {
       setSttCleanupStatus("skipped");
@@ -134,10 +138,11 @@ export function App() {
     }
 
     lastAcceptedTranscriptRef.current = normalizedCandidate;
-    setRecognizedText((currentText) => appendRecognizedText(currentText, candidate.text));
+    setNormalizedTerms(getNormalizedTermTargets(technicalText.replacements));
+    setRecognizedText((currentText) => appendRecognizedText(currentText, acceptedText));
     setSttCleanupStatus("accepted");
     setRecognitionMessage("");
-    liveFragmentHandlerRef.current(candidate.text, source);
+    liveFragmentHandlerRef.current(acceptedText, source);
   }, [settings.answerLanguage, t]);
   const handleTranscript = useCallback((text: string) => {
     processRecognizedFragment(text, "microphone");
@@ -377,6 +382,7 @@ export function App() {
     setSttCleanupStatus("idle");
     pendingMicrophoneFragmentsRef.current = [];
     lastAcceptedTranscriptRef.current = "";
+    setNormalizedTerms([]);
     conversationContextRef.current.clear();
     setLiveContextStatus({ currentTopic: null, fragmentCount: 0 });
   }, [settings.answerLanguage, settings.speechToTextProvider, speechToTextProvider, microphoneRecorder.stop, chunkTranscription.stopSession]);
@@ -426,6 +432,7 @@ export function App() {
     setSttCleanupStatus("idle");
     pendingMicrophoneFragmentsRef.current = [];
     lastAcceptedTranscriptRef.current = "";
+    setNormalizedTerms([]);
     answeredFragmentsRef.current.clear();
     conversationContextRef.current.clear();
     setLiveContextStatus({ currentTopic: null, fragmentCount: 0 });
@@ -442,12 +449,19 @@ export function App() {
       return;
     }
 
+    const normalizedManualText = normalizeTechnicalTerms(sanitizedManualText);
+    const manualText = normalizedManualText.text;
+    if (manualText !== recognizedText) {
+      setRecognizedText(manualText);
+    }
+    setNormalizedTerms(getNormalizedTermTargets(normalizedManualText.replacements));
+
     setError("");
     let knowledgeMatches: KnowledgeCard[] = [];
     if (shouldSearchLocalKnowledge(settings.answerSourceMode)) {
       setIsSearchingLocal(true);
       await showLocalSearchFeedback();
-      knowledgeMatches = findKnowledgeCards(sanitizedManualText);
+      knowledgeMatches = findKnowledgeCards(manualText);
       setIsSearchingLocal(false);
     }
 
@@ -478,7 +492,7 @@ export function App() {
       return;
     }
 
-    await requestAnswer(sanitizedManualText, "manual", resolution === "local-and-gpt");
+    await requestAnswer(manualText, "manual", resolution === "local-and-gpt");
   }
 
   async function requestMicrophonePermission() {
@@ -541,6 +555,9 @@ export function App() {
         {settings.speechToTextProvider === "mock" ? <span className="mode-badge simulated-badge">{t("mockStt")} · {t("simulatedMode")}</span> : null}
         {settings.speechToTextProvider === "microphone" ? <span className="mode-badge recording-badge">{t("microphoneCapture")}</span> : null}
         {settings.answerSourceMode === "local-only" ? <span className="mode-badge">{t("localOnlyModeStatus")}</span> : null}
+        {normalizedTerms.length > 0 ? (
+          <span className="status-note normalized-terms-note">{t("termsNormalized")}: {normalizedTerms.join(", ")}</span>
+        ) : null}
         {settings.workMode === "live" ? (
           <>
             <span className="status-note live-context-note">
@@ -759,6 +776,10 @@ function appendRecognizedText(currentText: string, phrase: string): string {
 
 function normalizeTranscriptForComparison(text: string): string {
   return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function getNormalizedTermTargets(replacements: Array<{ to: string }>): string[] {
+  return [...new Set(replacements.map((replacement) => replacement.to))];
 }
 
 async function showLocalSearchFeedback(): Promise<void> {
