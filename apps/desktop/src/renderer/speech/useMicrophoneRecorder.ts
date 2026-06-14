@@ -19,6 +19,7 @@ export interface MicrophoneRecorderState {
   status: MicrophoneRecorderStatus;
   debug: MicrophoneRecorderDebug;
   usedDefaultDevice: boolean;
+  audioLevel: number;
 }
 
 const initialDebug: MicrophoneRecorderDebug = {
@@ -29,23 +30,97 @@ const initialDebug: MicrophoneRecorderDebug = {
 
 interface UseMicrophoneRecorderOptions {
   onChunk?: (chunk: Blob) => void;
+  enableAudioLevel?: boolean;
 }
 
 export function useMicrophoneRecorder(options: UseMicrophoneRecorderOptions = {}) {
+  const enableAudioLevel = options.enableAudioLevel ?? false;
   const streamRef = useRef<MediaStream>();
   const recorderRef = useRef<MediaRecorder>();
   const chunkTimerRef = useRef<number>();
+  const audioContextRef = useRef<AudioContext>();
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode>();
+  const audioFrameRef = useRef<number>();
   const sessionRef = useRef(0);
   const onChunkRef = useRef(options.onChunk);
   const [state, setState] = useState<MicrophoneRecorderState>({
     status: "stopped",
     debug: initialDebug,
-    usedDefaultDevice: false
+    usedDefaultDevice: false,
+    audioLevel: 0
   });
 
   useEffect(() => {
     onChunkRef.current = options.onChunk;
   }, [options.onChunk]);
+
+  const stopAudioLevelMonitor = useCallback(() => {
+    if (audioFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(audioFrameRef.current);
+      audioFrameRef.current = undefined;
+    }
+
+    audioSourceRef.current?.disconnect();
+    audioSourceRef.current = undefined;
+
+    const audioContext = audioContextRef.current;
+    audioContextRef.current = undefined;
+    if (audioContext && audioContext.state !== "closed") {
+      void audioContext.close();
+    }
+  }, []);
+
+  const startAudioLevelMonitor = useCallback((stream: MediaStream, session: number) => {
+    if (enableAudioLevel) {
+      stopAudioLevelMonitor();
+    }
+
+    if (!enableAudioLevel || typeof AudioContext === "undefined") {
+      return;
+    }
+
+    try {
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.78;
+      const samples = new Uint8Array(analyser.fftSize);
+      let lastUpdate = 0;
+
+      source.connect(analyser);
+      audioContextRef.current = audioContext;
+      audioSourceRef.current = source;
+      if (audioContext.state === "suspended") {
+        void audioContext.resume();
+      }
+
+      const updateLevel = (timestamp: number) => {
+        if (session !== sessionRef.current) {
+          return;
+        }
+
+        analyser.getByteTimeDomainData(samples);
+        if (timestamp - lastUpdate >= 100) {
+          let sumSquares = 0;
+          for (const sample of samples) {
+            const centeredSample = (sample - 128) / 128;
+            sumSquares += centeredSample * centeredSample;
+          }
+          const level = Math.min(1, Math.sqrt(sumSquares / samples.length) * 4.5);
+          setState((current) => ({ ...current, audioLevel: level }));
+          lastUpdate = timestamp;
+        }
+
+        audioFrameRef.current = window.requestAnimationFrame(updateLevel);
+      };
+
+      audioFrameRef.current = window.requestAnimationFrame(updateLevel);
+    } catch {
+      stopAudioLevelMonitor();
+      setState((current) => ({ ...current, audioLevel: 0 }));
+    }
+  }, [enableAudioLevel, stopAudioLevelMonitor]);
 
   const stop = useCallback(() => {
     sessionRef.current += 1;
@@ -60,20 +135,21 @@ export function useMicrophoneRecorder(options: UseMicrophoneRecorderOptions = {}
       recorder.stop();
     }
 
+    if (enableAudioLevel) {
+      stopAudioLevelMonitor();
+    }
     stopTracks(streamRef.current);
     streamRef.current = undefined;
-    setState((current) => ({ ...current, status: "stopped" }));
-  }, []);
-
-  const getMediaStream = useCallback(() => streamRef.current ?? null, []);
+    setState((current) => ({ ...current, status: "stopped", audioLevel: 0 }));
+  }, [enableAudioLevel, stopAudioLevelMonitor]);
 
   const start = useCallback(async (selectedDeviceId: string) => {
     stop();
     const session = sessionRef.current;
-    setState({ status: "requesting_permission", debug: initialDebug, usedDefaultDevice: false });
+    setState({ status: "requesting_permission", debug: initialDebug, usedDefaultDevice: false, audioLevel: 0 });
 
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setState({ status: "error", debug: initialDebug, usedDefaultDevice: false });
+      setState({ status: "error", debug: initialDebug, usedDefaultDevice: false, audioLevel: 0 });
       return;
     }
 
@@ -124,21 +200,27 @@ export function useMicrophoneRecorder(options: UseMicrophoneRecorderOptions = {}
           window.clearInterval(chunkTimerRef.current);
           chunkTimerRef.current = undefined;
         }
+        if (enableAudioLevel) {
+          stopAudioLevelMonitor();
+        }
         stopTracks(stream);
         streamRef.current = undefined;
         recorderRef.current = undefined;
-        setState((current) => ({ ...current, status: "error" }));
+        setState((current) => ({ ...current, status: "error", audioLevel: 0 }));
       });
 
       startChunkCycle(recorder, session, sessionRef, recorderRef, chunkTimerRef);
-      setState({ status: "recording", debug: initialDebug, usedDefaultDevice: shouldUseDefault });
+      setState({ status: "recording", debug: initialDebug, usedDefaultDevice: shouldUseDefault, audioLevel: 0 });
+      if (enableAudioLevel) {
+        startAudioLevelMonitor(stream, session);
+      }
     } catch (error) {
       if (session !== sessionRef.current) {
         return;
       }
 
       if (isPermissionDenied(error)) {
-        setState({ status: "permission_denied", debug: initialDebug, usedDefaultDevice: false });
+        setState({ status: "permission_denied", debug: initialDebug, usedDefaultDevice: false, audioLevel: 0 });
         return;
       }
 
@@ -170,31 +252,38 @@ export function useMicrophoneRecorder(options: UseMicrophoneRecorderOptions = {}
               window.clearInterval(chunkTimerRef.current);
               chunkTimerRef.current = undefined;
             }
+            if (enableAudioLevel) {
+              stopAudioLevelMonitor();
+            }
             stopTracks(fallbackStream);
             streamRef.current = undefined;
             recorderRef.current = undefined;
-            setState((current) => ({ ...current, status: "error" }));
+            setState((current) => ({ ...current, status: "error", audioLevel: 0 }));
           });
           startChunkCycle(fallbackRecorder, session, sessionRef, recorderRef, chunkTimerRef);
-          setState({ status: "recording", debug: initialDebug, usedDefaultDevice: true });
+          setState({ status: "recording", debug: initialDebug, usedDefaultDevice: true, audioLevel: 0 });
+          if (enableAudioLevel) {
+            startAudioLevelMonitor(fallbackStream, session);
+          }
           return;
         } catch (fallbackError) {
           setState({
             status: isPermissionDenied(fallbackError) ? "permission_denied" : "device_unavailable",
             debug: initialDebug,
-            usedDefaultDevice: false
+            usedDefaultDevice: false,
+            audioLevel: 0
           });
           return;
         }
       }
 
-      setState({ status: "device_unavailable", debug: initialDebug, usedDefaultDevice: false });
+      setState({ status: "device_unavailable", debug: initialDebug, usedDefaultDevice: false, audioLevel: 0 });
     }
-  }, [stop]);
+  }, [startAudioLevelMonitor, stop, stopAudioLevelMonitor]);
 
   useEffect(() => stop, [stop]);
 
-  return { ...state, start, stop, getMediaStream };
+  return { ...state, start, stop };
 }
 
 function requestStream(deviceId: string): Promise<MediaStream> {

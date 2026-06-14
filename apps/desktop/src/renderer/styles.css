@@ -405,22 +405,6 @@ textarea:focus {
   opacity: 0.9;
 }
 
-.microphone-meter-bar-fallback {
-  animation: microphone-meter-pulse 900ms ease-in-out infinite alternate;
-}
-
-@keyframes microphone-meter-pulse {
-  0% {
-    height: 4px;
-    opacity: 0.46;
-  }
-
-  100% {
-    height: 13px;
-    opacity: 0.9;
-  }
-}
-
 .live-ready {
   color: #29618f;
   font-size: 12px;
@@ -809,10 +793,6 @@ textarea,
     transition-duration: 0.01ms !important;
   }
 
-  .microphone-meter-bar-fallback {
-    height: 8px !important;
-    animation: none;
-  }
 }
 
 .save-button {

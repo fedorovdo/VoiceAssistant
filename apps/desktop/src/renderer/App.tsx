@@ -39,6 +39,7 @@ const splitterRatioStorageKey = "voiceassistant.splitterRatio";
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8787";
 const liveDebounceMs = 650;
 const liveThrottleMs = 2000;
+// Disabled because Web Audio analysis currently interferes with experimental STT in Electron.
 const enableMicrophoneVisualizer = false;
 
 type DeviceStatus = "permission_hint" | "unavailable" | "none" | "found" | "error";
@@ -132,7 +133,10 @@ export function App() {
     language: settings.answerLanguage,
     onTranscript: handleTranscript
   });
-  const microphoneRecorder = useMicrophoneRecorder({ onChunk: chunkTranscription.transcribeChunk });
+  const microphoneRecorder = useMicrophoneRecorder({
+    onChunk: chunkTranscription.transcribeChunk,
+    enableAudioLevel: enableMicrophoneVisualizer
+  });
   const liveTimerRef = useRef<number>();
   const answeredFragmentsRef = useRef(new Set<string>());
   const lastLiveAnswerAtRef = useRef(0);
@@ -507,7 +511,7 @@ export function App() {
                 {enableMicrophoneVisualizer ? (
                   <MicrophoneLevelMeter
                     active={microphoneRecorder.status === "recording"}
-                    stream={microphoneRecorder.getMediaStream()}
+                    audioLevel={microphoneRecorder.audioLevel}
                     activeLabel={t("microphoneActive")}
                     stoppedLabel={t("microphoneStopped")}
                   />
