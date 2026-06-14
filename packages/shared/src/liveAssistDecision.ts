@@ -6,6 +6,7 @@ import { findKnowledgeCards } from "./knowledgeCards.js";
 
 export type LiveAssistAction =
   | "answer"
+  | "topic_intro"
   | "ignore"
   | "wait"
   | "cooldown"
@@ -14,7 +15,7 @@ export type LiveAssistAction =
   | "missing_api_key";
 
 export interface LiveAssistDecisionInput {
-  contextDecision: Pick<LiveContextDecision, "shouldAnswer" | "shouldWait" | "reason">;
+  contextDecision: Pick<LiveContextDecision, "intent" | "shouldAnswer" | "shouldWait" | "reason">;
   answerSourceMode: AnswerSourceMode;
   hasLocalMatch: boolean;
   hasApiKey: boolean;
@@ -29,6 +30,10 @@ export interface LiveAssistPolicyDecision {
 
 export function resolveLiveAssistDecision(input: LiveAssistDecisionInput): LiveAssistPolicyDecision {
   const { contextDecision } = input;
+
+  if (contextDecision.intent === "topic_intro") {
+    return { action: "topic_intro", reason: contextDecision.reason };
+  }
 
   if (contextDecision.shouldWait) {
     return { action: "wait", reason: contextDecision.reason };
@@ -61,7 +66,26 @@ export function resolveLiveAssistDecision(input: LiveAssistDecisionInput): LiveA
   return { action: "answer", reason: sourceResolution, sourceResolution };
 }
 
-export function findLiveKnowledgeCards(fragment: string, aggregatedText: string): KnowledgeCard[] {
+export function findLiveKnowledgeCards(
+  fragment: string,
+  aggregatedText: string,
+  currentTopic?: LiveContextDecision["currentTopic"]
+): KnowledgeCard[] {
   const directMatches = findKnowledgeCards(fragment);
-  return directMatches.length > 0 ? directMatches : findKnowledgeCards(aggregatedText);
+  if (directMatches.length > 0) return directMatches;
+
+  if (currentTopic) {
+    const contextualMatches = findKnowledgeCards(`${fragment} ${topicSearchContext(currentTopic)}`);
+    if (contextualMatches.length > 0) return contextualMatches;
+  }
+
+  return findKnowledgeCards(aggregatedText);
+}
+
+function topicSearchContext(topic: NonNullable<LiveContextDecision["currentTopic"]>): string {
+  if (topic === "Kubernetes") return "Kubernetes kubectl";
+  if (topic === "Docker Compose") return "Docker Compose";
+  if (topic === "Active Directory") return "Active Directory";
+  if (topic === "DNS/DHCP") return "DNS DHCP";
+  return topic;
 }

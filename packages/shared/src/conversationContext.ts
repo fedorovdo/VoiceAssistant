@@ -29,8 +29,11 @@ export interface ConversationContextSnapshot extends TopicDetectionResult {
   fragments: ConversationFragment[];
 }
 
+export type LiveAssistIntent = "topic_intro" | "answer_request" | "ignore" | "wait";
+
 export type LiveContextDecisionReason =
   | "answer"
+  | "topic_intro"
   | "incomplete"
   | "ignored"
   | "duplicate"
@@ -40,6 +43,7 @@ export interface LiveContextDecision extends ConversationContextSnapshot {
   aggregatedText: string;
   normalizedText: string;
   classification: FragmentClassification;
+  intent: LiveAssistIntent;
   shouldAnswer: boolean;
   shouldWait: boolean;
   reason: LiveContextDecisionReason;
@@ -98,11 +102,24 @@ const commandIntentPatterns = [
   /(?:какая|какой|какую) команд[ауой]/i,
   /команда для/i,
   /команд(?:а|ы)\s+(?:для\s+)?[a-zа-я]/i,
+  /(?:перечисли(?:те)?|покажи(?:те)?)\s+(?:основные\s+)?команд[ыау]/i,
+  /(?:какие\s+)?основные\s+команд[ыау]/i,
+  /расскажи(?:те)?\s+(?:про\s+)?основные\s+команд[ыау]/i,
   /помоги(?:те)?/i,
   /\bhow to\b/i,
   /\b(?:build|rebuild)\b/i,
   /\bcommand (?:for|to)\b/i,
   /\bhelp (?:with|me)\b/i
+];
+
+const topicIntroPatterns = [
+  /^(?:давайте\s+)?поговорим\s+(?:о|об|про)\s+/i,
+  /^(?:давайте\s+)?обсудим\s+/i,
+  /^тема\s+/i,
+  /^сегодня\s+(?:говорим\s+)?(?:о|об|про)\s+/i,
+  /^(?:let'?s\s+)?talk\s+about\s+/i,
+  /^let'?s\s+discuss\s+/i,
+  /^today(?:'s\s+topic\s+is|\s+we\s+discuss)\s+/i
 ];
 
 const ignoredConversationPatterns = [
@@ -157,11 +174,15 @@ export class ConversationContextBuffer {
     const aggregatedClassification = classifyTechnicalFragment(aggregatedText).classification;
 
     if (isLikelyIncompleteConversationFragment(cleanedText)) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, false, true, "incomplete");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "wait", false, true, "incomplete");
+    }
+
+    if (isTopicIntroduction(cleanedText, fragmentTopic.currentTopic)) {
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "topic_intro", false, false, "topic_intro");
     }
 
     if (ignoredConversationPatterns.some((pattern) => pattern.test(normalizedText))) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, false, false, "ignored");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored");
     }
 
     const hasIntent = hasAnswerIntent(aggregatedText);
@@ -169,21 +190,21 @@ export class ConversationContextBuffer {
       || (snapshot.currentTopic !== null && hasIntent);
 
     if (!shouldAnswer) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, false, false, "ignored");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored");
     }
 
     if (this.answeredFragments.has(normalizedText)) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, false, false, "duplicate");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", false, false, "duplicate");
     }
 
     const cooldownRemainingMs = snapshot.currentTopic
       ? this.getTopicCooldownRemaining(snapshot.currentTopic, normalizedText, timestamp)
       : 0;
     if (cooldownRemainingMs > 0) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, false, false, "topic_cooldown", cooldownRemainingMs);
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", false, false, "topic_cooldown", cooldownRemainingMs);
     }
 
-    return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, true, false, "answer");
+    return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", true, false, "answer");
   }
 
   markAnswered(result: Pick<LiveContextDecision, "normalizedText" | "currentTopic">, timestamp = Date.now()) {
@@ -309,6 +330,13 @@ export function isLikelyIncompleteConversationFragment(text: string): boolean {
   return !/[?.!]$/.test(cleaned) && danglingWords.has(lastWord);
 }
 
+export function isTopicIntroduction(text: string, topic = detectTechnicalTopic(text).currentTopic): boolean {
+  const normalized = normalizeContextText(text);
+  return topic !== null
+    && topicIntroPatterns.some((pattern) => pattern.test(normalized))
+    && !hasAnswerIntent(normalized);
+}
+
 function hasAnswerIntent(text: string): boolean {
   return hasQuestionIntent(text)
     || explanatoryIntentPatterns.some((pattern) => pattern.test(text))
@@ -326,12 +354,13 @@ function decision(
   aggregatedText: string,
   normalizedText: string,
   classification: FragmentClassification,
+  intent: LiveAssistIntent,
   shouldAnswer: boolean,
   shouldWait: boolean,
   reason: LiveContextDecisionReason,
   cooldownRemainingMs = 0
 ): LiveContextDecision {
-  return { ...snapshot, aggregatedText, normalizedText, classification, shouldAnswer, shouldWait, reason, cooldownRemainingMs };
+  return { ...snapshot, aggregatedText, normalizedText, classification, intent, shouldAnswer, shouldWait, reason, cooldownRemainingMs };
 }
 
 function addSentencePunctuation(text: string, question: boolean): string {

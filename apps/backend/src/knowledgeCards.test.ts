@@ -17,6 +17,9 @@ test("findKnowledgeCards matches Russian and English command queries", () => {
   assert.equal(findKnowledgeCards("Как проверить открытые порты в Linux?")[0]?.id, "linux-open-ports");
   assert.equal(findKnowledgeCards("Show me kubectl get pods")[0]?.id, "kubectl-get-pods");
   assert.equal(findKnowledgeCards("команда ss")[0]?.id, "linux-ss");
+  assert.equal(findKnowledgeCards("Перечислите основные команды Kubernetes")[0]?.id, "kubernetes-basic-commands");
+  assert.equal(findKnowledgeCards("команды kubectl")[0]?.id, "kubernetes-basic-commands");
+  assert.equal(findKnowledgeCards("как посмотреть логи pod")[0]?.id, "kubectl-logs");
 });
 
 test("findKnowledgeCards prioritizes specific service and compose commands", () => {

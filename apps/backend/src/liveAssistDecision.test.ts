@@ -71,3 +71,63 @@ test("live knowledge lookup tries the newest fragment before aggregate fallback"
   assert.equal(direct[0]?.id, "docker-logs");
   assert.equal(fallback[0]?.id, "docker-logs");
 });
+
+test("local-only finds the Kubernetes basic commands card", () => {
+  const contextDecision = new ConversationContextBuffer().add("Перечислите основные команды Kubernetes", 1_000);
+  const matches = findLiveKnowledgeCards(
+    "Перечислите основные команды Kubernetes",
+    contextDecision.aggregatedText,
+    contextDecision.currentTopic
+  );
+  const decision = resolveLiveAssistDecision({
+    contextDecision,
+    answerSourceMode: "local-only",
+    hasLocalMatch: matches.length > 0,
+    hasApiKey: false,
+    answerMode: "short"
+  });
+
+  assert.equal(matches[0]?.id, "kubernetes-basic-commands");
+  assert.equal(decision.action, "answer");
+  assert.equal(decision.sourceResolution, "local");
+});
+
+test("topic introduction followed by a short Kubernetes request finds local commands", () => {
+  const context = new ConversationContextBuffer();
+  context.add("Давайте поговорим о Kubernetes", 1_000);
+  const contextDecision = context.add("Какие основные команды?", 2_000);
+  const matches = findLiveKnowledgeCards(
+    "Какие основные команды?",
+    contextDecision.aggregatedText,
+    contextDecision.currentTopic
+  );
+
+  assert.equal(matches[0]?.id, "kubernetes-basic-commands");
+});
+
+test("Docker topic followed by a short logs request finds docker logs", () => {
+  const context = new ConversationContextBuffer();
+  context.add("Поговорим про Docker", 1_000);
+  const contextDecision = context.add("Как посмотреть логи?", 2_000);
+  const matches = findLiveKnowledgeCards(
+    "Как посмотреть логи?",
+    contextDecision.aggregatedText,
+    contextDecision.currentTopic
+  );
+
+  assert.equal(contextDecision.intent, "answer_request");
+  assert.equal(matches[0]?.id, "docker-logs");
+});
+
+test("topic introduction is skipped without being treated as generic ignore", () => {
+  const contextDecision = new ConversationContextBuffer().add("Обсудим Active Directory", 1_000);
+  const decision = resolveLiveAssistDecision({
+    contextDecision,
+    answerSourceMode: "gpt-only",
+    hasLocalMatch: false,
+    hasApiKey: true,
+    answerMode: "short"
+  });
+
+  assert.equal(decision.action, "topic_intro");
+});

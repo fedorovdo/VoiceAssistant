@@ -9,6 +9,7 @@ import type {
   KnowledgeCard,
   LayoutMode,
   LiveAssistAction,
+  LiveAssistIntent,
   LiveContextDecision,
   FragmentClassification,
   SanitizedTranscript,
@@ -75,6 +76,8 @@ interface LiveDecisionDiagnostics {
   decision: LiveAssistAction;
   reason: string;
   cooldownRemainingMs: number;
+  intent: LiveAssistIntent;
+  localMatchFound: boolean;
 }
 
 export function App() {
@@ -307,7 +310,7 @@ export function App() {
     });
 
     const knowledgeMatches = contextDecision.shouldAnswer && shouldSearchLocalKnowledge(settings.answerSourceMode)
-      ? findLiveKnowledgeCards(fragment, contextDecision.aggregatedText)
+      ? findLiveKnowledgeCards(fragment, contextDecision.aggregatedText, contextDecision.currentTopic)
       : [];
     const policyDecision = resolveLiveAssistDecision({
       contextDecision,
@@ -323,9 +326,14 @@ export function App() {
       contextDecision,
       settings.answerSourceMode,
       policyDecision.action,
-      policyDecision.reason
+      policyDecision.reason,
+      knowledgeMatches.length > 0
     ));
 
+    if (policyDecision.action === "topic_intro") {
+      setRecognitionMessage(t("liveStatusTopicDetected"));
+      return;
+    }
     if (policyDecision.action === "wait") {
       setRecognitionMessage(t("liveStatusWaiting"));
       return;
@@ -358,7 +366,8 @@ export function App() {
         contextDecision,
         settings.answerSourceMode,
         "duplicate",
-        "pending_or_answered_duplicate"
+        "pending_or_answered_duplicate",
+        knowledgeMatches.length > 0
       ));
       setRecognitionMessage(t("liveStatusDuplicate"));
       return;
@@ -366,7 +375,13 @@ export function App() {
 
     const answerText = contextDecision.aggregatedText;
     const resolution = policyDecision.sourceResolution;
-    setRecognitionMessage(t("liveStatusPreparing"));
+    setRecognitionMessage(
+      contextDecision.currentTopic && shouldSearchLocalKnowledge(settings.answerSourceMode)
+        ? t("liveStatusSearchingTopic")
+        : contextDecision.currentTopic
+          ? t("liveStatusCurrentTopicRequest")
+          : t("liveStatusPreparing")
+    );
 
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
@@ -645,7 +660,9 @@ export function App() {
                 <span>агрегированный</span><code>{liveDecisionDiagnostics.aggregatedFragment || "—"}</code>
                 <span>тема</span><code>{liveDecisionDiagnostics.topic ?? "—"}</code>
                 <span>классификация</span><code>{liveDecisionDiagnostics.classification}</code>
+                <span>намерение</span><code>{liveDecisionDiagnostics.intent}</code>
                 <span>источник ответа</span><code>{liveDecisionDiagnostics.answerSourceMode}</code>
+                <span>локальное совпадение</span><code>{String(liveDecisionDiagnostics.localMatchFound)}</code>
                 <span>решение</span><code>{liveDecisionDiagnostics.decision}</code>
                 <span>причина</span><code>{liveDecisionDiagnostics.reason}</code>
                 <span>осталось паузы</span><code>{formatCooldown(liveDecisionDiagnostics.cooldownRemainingMs)}</code>
@@ -800,7 +817,8 @@ function createLiveDecisionDiagnostics(
   contextDecision: LiveContextDecision,
   answerSourceMode: AnswerSourceMode,
   decision: LiveAssistAction,
-  reason: string
+  reason: string,
+  localMatchFound: boolean
 ): LiveDecisionDiagnostics {
   return {
     rawFragment,
@@ -808,10 +826,12 @@ function createLiveDecisionDiagnostics(
     aggregatedFragment: contextDecision.aggregatedText,
     topic: contextDecision.currentTopic,
     classification: contextDecision.classification,
+    intent: contextDecision.intent,
     answerSourceMode,
     decision,
     reason,
-    cooldownRemainingMs: contextDecision.cooldownRemainingMs
+    cooldownRemainingMs: contextDecision.cooldownRemainingMs,
+    localMatchFound
   };
 }
 

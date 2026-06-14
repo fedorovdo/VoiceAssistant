@@ -22,12 +22,42 @@ test("conversation context aggregates a topic statement with a short question", 
   const context = new ConversationContextBuffer();
   const topicStatement = context.add("Поговорим про Kubernetes", 1_000);
   assert.equal(topicStatement.shouldAnswer, false);
+  assert.equal(topicStatement.intent, "topic_intro");
 
   const question = context.add("Из чего состоит кластер", 2_000);
   assert.equal(question.shouldAnswer, true);
   assert.equal(question.currentTopic, "Kubernetes");
   assert.match(question.aggregatedText, /Поговорим про Kubernetes\./);
   assert.match(question.aggregatedText, /Из чего состоит кластер\?/);
+});
+
+test("topic introduction sets Kubernetes context without requesting an answer", () => {
+  const context = new ConversationContextBuffer();
+  const result = context.add("Давайте поговорим о Kubernetes", 1_000);
+
+  assert.equal(result.intent, "topic_intro");
+  assert.equal(result.currentTopic, "Kubernetes");
+  assert.equal(result.shouldAnswer, false);
+  assert.equal(result.reason, "topic_intro");
+});
+
+test("short command request uses the current Kubernetes topic", () => {
+  const context = new ConversationContextBuffer();
+  context.add("Давайте поговорим о Kubernetes", 1_000);
+  const result = context.add("Какие основные команды?", 2_000);
+
+  assert.equal(result.intent, "answer_request");
+  assert.equal(result.currentTopic, "Kubernetes");
+  assert.equal(result.shouldAnswer, true);
+  assert.match(result.aggregatedText, /Kubernetes/);
+});
+
+test("explicit Kubernetes command list is an answer request", () => {
+  const result = new ConversationContextBuffer().add("Перечислите основные команды Kubernetes", 1_000);
+
+  assert.equal(result.intent, "answer_request");
+  assert.equal(result.shouldAnswer, true);
+  assert.equal(result.currentTopic, "Kubernetes");
 });
 
 test("conversation context answers an explicit Docker question", () => {
@@ -95,5 +125,6 @@ test("conversation context ignores non-technical meeting housekeeping", () => {
   const result = context.add("Давайте начнем встречу и перейдем к следующему слайду", 1_000);
   assert.equal(result.shouldAnswer, false);
   assert.equal(result.reason, "ignored");
+  assert.equal(result.intent, "ignore");
   assert.equal(result.currentTopic, null);
 });

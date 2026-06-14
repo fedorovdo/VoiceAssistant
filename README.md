@@ -92,6 +92,8 @@ The desktop workspace supports **Vertical** and **Horizontal** panel layouts. Ch
 
 Live Assist remains conservative: it classifies each completed Mock STT or microphone transcript as an explicit technical question, a technical term, or ignored conversation. Only suitable fragments are answered automatically, with debounce, throttling, duplicate prevention, and no parallel answer requests.
 
+Topic introductions such as `Давайте поговорим о Kubernetes` set the in-memory conversation topic without requesting an immediate answer. Live Assist then waits for a question or command request and can qualify short follow-ups such as `Какие основные команды?` or `Как посмотреть логи?` with that topic. Explicit requests trigger answers normally, while non-technical conversation remains ignored.
+
 Live answers are designed for mixed audiences and stay concise. Learning mode may provide a longer explanation.
 
 Live Assist also keeps a lightweight in-memory context of up to ten recent accepted fragments for roughly 90 seconds. It detects the current broad technical topic, may combine a topic-setting phrase with the next question, and can wait briefly when a phrase appears incomplete. Local knowledge checks the newest fragment first and then the compact aggregate, while GPT receives the aggregate. Cooldown blocks exact and near-duplicate questions without suppressing a clearly different follow-up on the same topic.
@@ -107,6 +109,8 @@ For Russian speech, accepted STT fragments also pass through a conservative tech
 VoiceAssistant includes an expanded in-memory practical command reference for Linux troubleshooting, Docker and Docker Compose, Kubernetes, networking, Windows and Active Directory, Proxmox, and Git. It covers service and log diagnostics, filesystems and permissions, containers and images, kubectl troubleshooting, port and DNS checks, Group Policy and AD replication, virtualization storage, backups, and everyday version-control commands. Cards contain concise Russian explanations, practical bullets, commands, Russian and English aliases, and related terms.
 
 Manual Ask and Live Assist check these cards before waiting for GPT. A matching card is shown immediately with the source label **local knowledge**, and it works without an API key. In interview and learning modes, a configured GPT provider may enrich that result while the local card stays visible; the source changes clearly when the GPT response arrives. Without a local match, an API key is required for a GPT answer.
+
+Local-only mode includes a concise Kubernetes/kubectl command overview, so common requests such as `основные команды Kubernetes`, `команды kubectl`, and Pod log checks can be answered without GPT.
 
 Matching is conservative and normalizes Russian and English aliases. Short generic words such as `pod` or `free` require question or technical context to avoid noisy answers.
 
