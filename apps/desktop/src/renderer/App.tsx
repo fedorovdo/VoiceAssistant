@@ -474,27 +474,27 @@ export function App() {
         style={panelSplitter.splitterStyle}
       >
         <div className="panel recognized-panel">
-          <div className="panel-header">
-            <div>
+          <div className="panel-header recognized-panel-header">
+            <div className="recognized-toolbar-row">
               <h2>{t("recognizedPanel")}</h2>
-              <p>{getRecognitionHint(settings.speechToTextProvider, t)}</p>
-            </div>
-            <div className="recognition-controls">
-              <button className="control-button" type="button" onClick={() => void startListening()} disabled={isListening || settings.speechToTextProvider === "disabled"}>
-                <Play size={18} />{t("start")}
-              </button>
-              <button className="control-button stop" type="button" onClick={stopListening} disabled={!isListening}>
-                <Square size={18} />{t("stop")}
-              </button>
-              <button className="secondary-button" type="button" onClick={clearRecognizedText} disabled={!recognizedText}>
-                <Trash2 size={18} />{t("clear")}
-              </button>
-              {settings.workMode === "manual" ? (
-                <button className="ask-button" type="button" onClick={() => void askManually()} disabled={isAsking || isSearchingLocal}>
-                  <Send size={18} />{isAsking ? t("asking") : t("ask")}
+              <div className="recognition-controls">
+                <button className="control-button" type="button" onClick={() => void startListening()} disabled={isListening || settings.speechToTextProvider === "disabled"}>
+                  <Play size={18} />{t("start")}
                 </button>
-              ) : null}
+                <button className="control-button stop" type="button" onClick={stopListening} disabled={!isListening}>
+                  <Square size={18} />{t("stop")}
+                </button>
+                <button className="secondary-button" type="button" onClick={clearRecognizedText} disabled={!recognizedText}>
+                  <Trash2 size={18} />{t("clear")}
+                </button>
+                {settings.workMode === "manual" ? (
+                  <button className="ask-button" type="button" onClick={() => void askManually()} disabled={isAsking || isSearchingLocal}>
+                    <Send size={18} />{isAsking ? t("asking") : t("ask")}
+                  </button>
+                ) : null}
+              </div>
             </div>
+            <p className="recognized-panel-hint">{getRecognitionHint(settings.speechToTextProvider, t)}</p>
           </div>
           <textarea value={recognizedText} onChange={(event) => setRecognizedText(event.target.value)} placeholder={t("recognizedPlaceholder")} />
           {recognitionMessage ? <div className="recognition-message">{recognitionMessage}</div> : null}
