@@ -32,6 +32,7 @@ export interface ConversationContextSnapshot extends TopicDetectionResult {
 }
 
 export type LiveAssistIntent = "topic_intro" | "answer_request" | "ignore" | "wait";
+export type LiveDecisionSource = "newest_fragment" | "pending_context";
 
 export type LiveContextDecisionReason =
   | "answer"
@@ -39,6 +40,7 @@ export type LiveContextDecisionReason =
   | "incomplete"
   | "ignored"
   | "active_topic_fragment"
+  | "pending_answer_request"
   | "duplicate"
   | "topic_cooldown";
 
@@ -52,12 +54,23 @@ export interface LiveContextDecision extends ConversationContextSnapshot {
   reason: LiveContextDecisionReason;
   cooldownRemainingMs: number;
   sensitivity: LiveAssistSensitivity;
+  decisionSource: LiveDecisionSource;
+  pendingRequestText?: string;
 }
 
 export interface ConversationContextOptions {
   maxAgeMs?: number;
   maxFragments?: number;
   topicCooldownMs?: number;
+  pendingRequestMaxAgeMs?: number;
+}
+
+interface PendingAnswerRequest {
+  text: string;
+  normalizedText: string;
+  topic: TechnicalTopic;
+  classification: FragmentClassification;
+  timestamp: number;
 }
 
 const topicTerms: Record<TechnicalTopic, string[]> = {
@@ -117,8 +130,8 @@ const commandIntentPatterns = [
 ];
 
 const topicIntroPatterns = [
-  /^(?:давайте\s+)?поговорим\s+(?:о|об|про)\s+/i,
-  /^(?:давайте\s+)?обсудим\s+/i,
+  /^(?:коллеги[, ]+)?(?:давайте\s+)?поговорим\s+(?:о|об|про)\s+/i,
+  /^(?:коллеги[, ]+)?(?:давайте\s+)?обсудим\s+/i,
   /^тема\s+/i,
   /^сегодня\s+(?:говорим\s+)?(?:о|об|про)\s+/i,
   /^(?:let'?s\s+)?talk\s+about\s+/i,
@@ -149,14 +162,17 @@ export class ConversationContextBuffer {
   private readonly maxAgeMs: number;
   private readonly maxFragments: number;
   private readonly topicCooldownMs: number;
+  private readonly pendingRequestMaxAgeMs: number;
   private fragments: ConversationFragment[] = [];
   private answeredFragments = new Map<string, number>();
   private lastTopicAnswers = new Map<TechnicalTopic, { timestamp: number; normalizedText: string }>();
+  private pendingRequest?: PendingAnswerRequest;
 
   constructor(options: ConversationContextOptions = {}) {
     this.maxAgeMs = options.maxAgeMs ?? 90_000;
     this.maxFragments = options.maxFragments ?? 10;
     this.topicCooldownMs = options.topicCooldownMs ?? 30_000;
+    this.pendingRequestMaxAgeMs = options.pendingRequestMaxAgeMs ?? 25_000;
   }
 
   add(text: string, timestamp = Date.now(), sensitivity: LiveAssistSensitivity = "balanced"): LiveContextDecision {
@@ -175,6 +191,7 @@ export class ConversationContextBuffer {
     const snapshot = this.getSnapshot(timestamp);
     const aggregatedText = aggregateConversationFragments(this.fragments, snapshot.currentTopic);
     const normalizedText = normalizeContextText(aggregatedText);
+    const normalizedNewestText = normalizeContextText(cleanedText);
     const aggregatedClassification = classifyTechnicalFragment(aggregatedText).classification;
 
     if (isLikelyIncompleteConversationFragment(cleanedText)) {
@@ -185,12 +202,14 @@ export class ConversationContextBuffer {
       return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "topic_intro", false, false, "topic_intro", sensitivity);
     }
 
-    if (ignoredConversationPatterns.some((pattern) => pattern.test(normalizedText))) {
+    if (ignoredConversationPatterns.some((pattern) => pattern.test(normalizedNewestText))) {
+      const pendingDecision = this.recoverPendingRequest(snapshot, sensitivity, timestamp);
+      if (pendingDecision) return pendingDecision;
       return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored", sensitivity);
     }
 
-    const hasIntent = hasAnswerIntent(aggregatedText);
-    const balancedAnswer = aggregatedClassification === "explicit_question"
+    const hasIntent = hasAnswerIntent(cleanedText);
+    const balancedAnswer = classification === "explicit_question"
       || (snapshot.currentTopic !== null && hasIntent);
     const conservativeAnswer = snapshot.currentTopic !== null && hasIntent;
     const activeTopicAnswer = isActiveTopicRequest(cleanedText, snapshot.currentTopic, classification);
@@ -204,6 +223,8 @@ export class ConversationContextBuffer {
       : "answer";
 
     if (!shouldAnswer) {
+      const pendingDecision = this.recoverPendingRequest(snapshot, sensitivity, timestamp);
+      if (pendingDecision) return pendingDecision;
       return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored", sensitivity);
     }
 
@@ -218,7 +239,30 @@ export class ConversationContextBuffer {
       return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", false, false, "topic_cooldown", sensitivity, cooldownRemainingMs);
     }
 
-    return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", true, false, answerReason, sensitivity);
+    if (snapshot.currentTopic) {
+      this.pendingRequest = {
+        text: aggregatedText,
+        normalizedText,
+        topic: snapshot.currentTopic,
+        classification: aggregatedClassification,
+        timestamp
+      };
+    }
+
+    return decision(
+      snapshot,
+      aggregatedText,
+      normalizedText,
+      aggregatedClassification,
+      "answer_request",
+      true,
+      false,
+      answerReason,
+      sensitivity,
+      0,
+      "newest_fragment",
+      aggregatedText
+    );
   }
 
   markAnswered(result: Pick<LiveContextDecision, "normalizedText" | "currentTopic">, timestamp = Date.now()) {
@@ -231,6 +275,13 @@ export class ConversationContextBuffer {
         normalizedText: result.normalizedText
       });
     }
+    if (this.pendingRequest?.normalizedText === result.normalizedText) {
+      this.pendingRequest = undefined;
+    }
+  }
+
+  clearPendingRequest() {
+    this.pendingRequest = undefined;
   }
 
   getSnapshot(timestamp = Date.now()): ConversationContextSnapshot {
@@ -246,6 +297,7 @@ export class ConversationContextBuffer {
     this.fragments = [];
     this.answeredFragments.clear();
     this.lastTopicAnswers.clear();
+    this.pendingRequest = undefined;
   }
 
   private getTopicCooldownRemaining(
@@ -266,6 +318,32 @@ export class ConversationContextBuffer {
     return this.topicCooldownMs - elapsed;
   }
 
+  private recoverPendingRequest(
+    snapshot: ConversationContextSnapshot,
+    sensitivity: LiveAssistSensitivity,
+    timestamp: number
+  ): LiveContextDecision | undefined {
+    const pending = this.pendingRequest;
+    if (sensitivity === "conservative" || !pending || timestamp - pending.timestamp > this.pendingRequestMaxAgeMs) {
+      return undefined;
+    }
+
+    return decision(
+      { ...snapshot, currentTopic: pending.topic },
+      pending.text,
+      pending.normalizedText,
+      pending.classification,
+      "answer_request",
+      true,
+      false,
+      "pending_answer_request",
+      sensitivity,
+      0,
+      "pending_context",
+      pending.text
+    );
+  }
+
   private prune(timestamp: number) {
     const oldestAllowed = timestamp - this.maxAgeMs;
     this.fragments = this.fragments
@@ -275,6 +353,9 @@ export class ConversationContextBuffer {
       if (answeredAt < oldestAllowed) {
         this.answeredFragments.delete(fragment);
       }
+    }
+    if (this.pendingRequest && timestamp - this.pendingRequest.timestamp > this.pendingRequestMaxAgeMs) {
+      this.pendingRequest = undefined;
     }
   }
 }
@@ -394,9 +475,24 @@ function decision(
   shouldWait: boolean,
   reason: LiveContextDecisionReason,
   sensitivity: LiveAssistSensitivity,
-  cooldownRemainingMs = 0
+  cooldownRemainingMs = 0,
+  decisionSource: LiveDecisionSource = "newest_fragment",
+  pendingRequestText?: string
 ): LiveContextDecision {
-  return { ...snapshot, aggregatedText, normalizedText, classification, intent, shouldAnswer, shouldWait, reason, cooldownRemainingMs, sensitivity };
+  return {
+    ...snapshot,
+    aggregatedText,
+    normalizedText,
+    classification,
+    intent,
+    shouldAnswer,
+    shouldWait,
+    reason,
+    cooldownRemainingMs,
+    sensitivity,
+    decisionSource,
+    pendingRequestText
+  };
 }
 
 function addSentencePunctuation(text: string, question: boolean): string {

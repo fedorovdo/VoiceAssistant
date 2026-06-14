@@ -197,3 +197,45 @@ test("non-technical phrase is ignored in every sensitivity mode", () => {
     assert.equal(result.intent, "ignore");
   }
 });
+
+test("balanced sensitivity recovers a recent unanswered request after a noisy fragment", () => {
+  const context = new ConversationContextBuffer({ pendingRequestMaxAgeMs: 25_000 });
+  context.add("Коллеги, давайте поговорим о Kubernetes.", 1_000, "balanced");
+  const request = context.add("Какие основные команды вы знаете?", 5_000, "balanced");
+  const recovered = context.add("Первый отец.", 8_000, "balanced");
+
+  assert.equal(request.shouldAnswer, true);
+  assert.equal(recovered.shouldAnswer, true);
+  assert.equal(recovered.reason, "pending_answer_request");
+  assert.equal(recovered.decisionSource, "pending_context");
+  assert.equal(recovered.pendingRequestText, request.aggregatedText);
+  assert.doesNotMatch(recovered.aggregatedText, /Первый отец/);
+});
+
+test("conservative sensitivity does not recover a pending request from later noise", () => {
+  const context = new ConversationContextBuffer();
+  context.add("Тема Kubernetes", 1_000, "conservative");
+  const request = context.add("Какие основные команды Kubernetes?", 2_000, "conservative");
+  const noise = context.add("Первый отец.", 3_000, "conservative");
+
+  assert.equal(request.shouldAnswer, true);
+  assert.equal(noise.shouldAnswer, false);
+  assert.equal(noise.intent, "ignore");
+});
+
+test("answered and cleared pending requests are not recovered", () => {
+  const answeredContext = new ConversationContextBuffer();
+  answeredContext.add("Тема Kubernetes", 1_000);
+  const request = answeredContext.add("Какие основные команды?", 2_000);
+  answeredContext.markAnswered(request, 2_500);
+  const afterAnswer = answeredContext.add("Первый отец.", 3_000);
+
+  const clearedContext = new ConversationContextBuffer();
+  clearedContext.add("Тема Kubernetes", 1_000);
+  clearedContext.add("Какие основные команды?", 2_000);
+  clearedContext.clear();
+  const afterClear = clearedContext.add("Первый отец.", 3_000);
+
+  assert.equal(afterAnswer.shouldAnswer, false);
+  assert.equal(afterClear.shouldAnswer, false);
+});

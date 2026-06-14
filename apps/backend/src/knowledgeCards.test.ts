@@ -85,3 +85,8 @@ test("findKnowledgeCards keeps new generic words conservative", () => {
   assert.deepEqual(findKnowledgeCards("container"), []);
   assert.deepEqual(findKnowledgeCards("port"), []);
 });
+
+test("findKnowledgeCards covers Kubernetes command overview and restart requests", () => {
+  assert.equal(findKnowledgeCards("Какие основные команды вы знаете Kubernetes?")[0]?.id, "kubernetes-basic-commands");
+  assert.equal(findKnowledgeCards("Как перезапустить Kubernetes?")[0]?.id, "kubectl-rollout-restart");
+});

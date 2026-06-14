@@ -629,11 +629,44 @@ textarea:focus {
 }
 
 .recognition-message {
-  padding: 9px 16px;
+  padding: 6px 14px;
   border-top: 1px solid rgb(29 29 31 / 7%);
   color: #68686d;
   background: #f8f8fa;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.diagnostics-toggle-row {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  padding: 3px 12px;
+  border-top: 1px solid rgb(29 29 31 / 6%);
+  background: #fbfbfd;
+}
+
+.diagnostics-toggle {
+  min-height: 24px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 5px;
+  color: #6e6e73;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.diagnostics-toggle:hover {
+  color: #343438;
+  background: rgb(29 29 31 / 5%);
+}
+
+.diagnostics-toggle:focus-visible {
+  outline: 2px solid rgb(22 113 217 / 45%);
+  outline-offset: 1px;
 }
 
 .modal-backdrop {
@@ -686,12 +719,34 @@ label {
 
 .recorder-debug {
   display: grid;
-  gap: 7px;
-  padding: 10px 16px;
+  flex: 0 0 auto;
+  gap: 5px;
+  padding: 6px 12px;
   border-top: 1px solid rgb(29 29 31 / 7%);
   color: #68686d;
   background: #f8f8fa;
   font-size: 11px;
+}
+
+.recorder-summary-line {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  line-height: 1.3;
+}
+
+.recorder-summary-line > strong {
+  color: #3a3a3f;
+  font-weight: 650;
+}
+
+.recorder-details {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgb(29 29 31 / 7%);
 }
 
 .recorder-debug-header,

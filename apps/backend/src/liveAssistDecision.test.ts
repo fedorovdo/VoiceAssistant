@@ -153,3 +153,41 @@ test("local-only active sensitivity uses topic context for a short fragment", ()
   assert.equal(decision.action, "answer");
   assert.match(decision.reason, /sensitivity=active/);
 });
+
+test("local-only recovers Kubernetes commands from pending context after noise", () => {
+  const context = new ConversationContextBuffer();
+  context.add("Коллеги, давайте поговорим о Kubernetes.", 1_000, "balanced");
+  context.add("Какие основные команды вы знаете?", 2_000, "balanced");
+  const contextDecision = context.add("Первый отец.", 3_000, "balanced");
+  const matches = findLiveKnowledgeCards(
+    contextDecision.pendingRequestText ?? "Первый отец.",
+    contextDecision.aggregatedText,
+    contextDecision.currentTopic
+  );
+  const decision = resolveLiveAssistDecision({
+    contextDecision,
+    answerSourceMode: "local-only",
+    hasLocalMatch: matches.length > 0,
+    hasApiKey: false,
+    answerMode: "short"
+  });
+
+  assert.equal(contextDecision.decisionSource, "pending_context");
+  assert.equal(matches[0]?.id, "kubernetes-basic-commands");
+  assert.equal(decision.action, "answer");
+  assert.equal(decision.sourceResolution, "local");
+});
+
+test("Kubernetes topic resolves a short restart follow-up locally", () => {
+  const context = new ConversationContextBuffer();
+  context.add("Давайте поговорим о Kubernetes", 1_000);
+  const contextDecision = context.add("Например, как перезапустить?", 2_000);
+  const matches = findLiveKnowledgeCards(
+    "Например, как перезапустить?",
+    contextDecision.aggregatedText,
+    contextDecision.currentTopic
+  );
+
+  assert.equal(contextDecision.shouldAnswer, true);
+  assert.equal(matches[0]?.id, "kubectl-rollout-restart");
+});

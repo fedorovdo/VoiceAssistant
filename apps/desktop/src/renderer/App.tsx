@@ -81,6 +81,8 @@ interface LiveDecisionDiagnostics {
   intent: LiveAssistIntent;
   localMatchFound: boolean;
   sensitivity: LiveAssistSensitivity;
+  decisionSource: LiveContextDecision["decisionSource"];
+  pendingRequestText?: string;
 }
 
 export function App() {
@@ -103,6 +105,7 @@ export function App() {
   const [recognitionMessage, setRecognitionMessage] = useState("");
   const [normalizedTerms, setNormalizedTerms] = useState<string[]>([]);
   const [liveDecisionDiagnostics, setLiveDecisionDiagnostics] = useState<LiveDecisionDiagnostics>();
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [sttCleanupStatus, setSttCleanupStatus] = useState<SttCleanupStatus>("idle");
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
   const [isRefreshingDevices, setIsRefreshingDevices] = useState(false);
@@ -312,8 +315,11 @@ export function App() {
       fragmentCount: contextDecision.fragments.length
     });
 
+    const knowledgeFragment = contextDecision.decisionSource === "pending_context"
+      ? contextDecision.pendingRequestText ?? fragment
+      : fragment;
     const knowledgeMatches = contextDecision.shouldAnswer && shouldSearchLocalKnowledge(settings.answerSourceMode)
-      ? findLiveKnowledgeCards(fragment, contextDecision.aggregatedText, contextDecision.currentTopic)
+      ? findLiveKnowledgeCards(knowledgeFragment, contextDecision.aggregatedText, contextDecision.currentTopic)
       : [];
     const policyDecision = resolveLiveAssistDecision({
       contextDecision,
@@ -354,10 +360,12 @@ export function App() {
       return;
     }
     if (policyDecision.action === "no_local_match") {
+      conversationContextRef.current.clearPendingRequest();
       setRecognitionMessage(t("liveStatusNoLocalMatch"));
       return;
     }
     if (policyDecision.action === "missing_api_key") {
+      conversationContextRef.current.clearPendingRequest();
       setRecognitionMessage(t("liveStatusMissingApiKey"));
       return;
     }
@@ -409,6 +417,7 @@ export function App() {
 
       const sent = await requestAnswer(answerText, "live", resolution === "local-and-gpt");
       if (!sent && resolution === "gpt") {
+        conversationContextRef.current.clearPendingRequest();
         answeredFragmentsRef.current.delete(contextDecision.normalizedText);
       } else if (resolution === "gpt") {
         conversationContextRef.current.markAnswered(contextDecision);
@@ -659,8 +668,20 @@ export function App() {
           </div>
           <textarea value={recognizedText} onChange={(event) => setRecognizedText(event.target.value)} placeholder={t("recognizedPlaceholder")} />
           {recognitionMessage ? <div className="recognition-message">{recognitionMessage}</div> : null}
-          {import.meta.env.DEV && settings.workMode === "live" && liveDecisionDiagnostics ? (
-            <div className="stt-diagnostics live-decision-diagnostics">
+          {import.meta.env.DEV && (settings.workMode === "live" || settings.speechToTextProvider === "microphone") ? (
+            <div className="diagnostics-toggle-row">
+              <button
+                className="diagnostics-toggle"
+                type="button"
+                aria-expanded={showDiagnostics}
+                onClick={() => setShowDiagnostics((visible) => !visible)}
+              >
+                {showDiagnostics ? t("hideDiagnostics") : t("showDiagnostics")}
+              </button>
+            </div>
+          ) : null}
+          {import.meta.env.DEV && showDiagnostics && settings.workMode === "live" && liveDecisionDiagnostics ? (
+            <div className="stt-diagnostics live-decision-diagnostics" id="recognized-panel-diagnostics">
               <strong>Диагностика Live Assist</strong>
               <div className="stt-diagnostics-grid">
                 <span>сырой фрагмент</span><code>{liveDecisionDiagnostics.rawFragment || "—"}</code>
@@ -673,6 +694,8 @@ export function App() {
                 <span>чувствительность</span><code>{liveDecisionDiagnostics.sensitivity}</code>
                 <span>локальное совпадение</span><code>{String(liveDecisionDiagnostics.localMatchFound)}</code>
                 <span>решение</span><code>{liveDecisionDiagnostics.decision}</code>
+                <span>источник решения</span><code>{liveDecisionDiagnostics.decisionSource}</code>
+                <span>ожидающий запрос</span><code>{liveDecisionDiagnostics.pendingRequestText ?? "—"}</code>
                 <span>причина</span><code>{liveDecisionDiagnostics.reason}</code>
                 <span>осталось паузы</span><code>{formatCooldown(liveDecisionDiagnostics.cooldownRemainingMs)}</code>
               </div>
@@ -680,40 +703,44 @@ export function App() {
           ) : null}
           {settings.speechToTextProvider === "microphone" ? (
             <div className="recorder-debug">
-              <div className="recorder-debug-header">
-                <span>{t("recordingDebug")}</span>
-                {enableMicrophoneVisualizer ? (
-                  <MicrophoneLevelMeter
-                    active={microphoneRecorder.status === "recording"}
-                    audioLevel={microphoneRecorder.audioLevel}
-                    activeLabel={t("microphoneActive")}
-                    stoppedLabel={t("microphoneStopped")}
-                  />
-                ) : null}
-                <span>{t("audioPrivacyNote")}</span>
-              </div>
-              <div className="recorder-debug-values">
+              <div className="recorder-summary-line">
+                <strong>{t("recordingDebug")}</strong>
                 <span>{t("chunksCaptured")}: {microphoneRecorder.debug.chunksCaptured}</span>
                 <span>{t("lastChunkSize")}: {microphoneRecorder.debug.lastChunkSize > 0 ? `${microphoneRecorder.debug.lastChunkSize} ${t("bytes")}` : t("noChunksYet")}</span>
                 <span>{t("lastChunkMimeType")}: {microphoneRecorder.debug.lastChunkMimeType || "—"}</span>
+                <span className={chunkTranscription.status === "error" || chunkTranscription.status === "missing_api_key" ? "recorder-warning" : "transcription-status"}>
+                  {t("transcriptionStatus")}: {getTranscriptionStatusText(chunkTranscription.status, t)}
+                </span>
+                <span className={sttCleanupStatus === "skipped" ? "recorder-warning" : "transcription-status"}>
+                  {t("sttCleanupStatus")}: {getSttCleanupStatusText(sttCleanupStatus, t)}
+                </span>
               </div>
-              <div className={chunkTranscription.status === "error" || chunkTranscription.status === "missing_api_key" ? "recorder-warning" : "transcription-status"}>
-                {t("transcriptionStatus")}: {getTranscriptionStatusText(chunkTranscription.status, t)}
-              </div>
-              <div className={sttCleanupStatus === "skipped" ? "recorder-warning" : "transcription-status"}>
-                {t("sttCleanupStatus")}: {getSttCleanupStatusText(sttCleanupStatus, t)}
-              </div>
-              {import.meta.env.DEV && chunkTranscription.diagnostics ? (
-                <div className="stt-diagnostics">
-                  <strong>Диагностика STT</strong>
-                  <div className="stt-diagnostics-grid">
-                    <span>размер чанка</span><code>{chunkTranscription.diagnostics.chunkSize} байт</code>
-                    <span>тип чанка</span><code>{chunkTranscription.diagnostics.chunkMimeType}</code>
-                    <span>ключ передан</span><code>{String(chunkTranscription.diagnostics.apiKeyPresent)}</code>
-                    <span>запрос начат</span><code>{formatDiagnosticTimestamp(chunkTranscription.diagnostics.requestStartedAt)}</code>
-                    <span>статус ответа</span><code>{chunkTranscription.diagnostics.responseStatus ?? "—"}</code>
-                    <span>ошибка</span><code>{chunkTranscription.diagnostics.error ?? "—"}</code>
+              {showDiagnostics ? (
+                <div className="recorder-details">
+                  <div className="recorder-debug-header">
+                    {enableMicrophoneVisualizer ? (
+                      <MicrophoneLevelMeter
+                        active={microphoneRecorder.status === "recording"}
+                        audioLevel={microphoneRecorder.audioLevel}
+                        activeLabel={t("microphoneActive")}
+                        stoppedLabel={t("microphoneStopped")}
+                      />
+                    ) : null}
+                    <span>{t("audioPrivacyNote")}</span>
                   </div>
+                  {import.meta.env.DEV && chunkTranscription.diagnostics ? (
+                    <div className="stt-diagnostics">
+                      <strong>Диагностика STT</strong>
+                      <div className="stt-diagnostics-grid">
+                        <span>размер чанка</span><code>{chunkTranscription.diagnostics.chunkSize} байт</code>
+                        <span>тип чанка</span><code>{chunkTranscription.diagnostics.chunkMimeType}</code>
+                        <span>ключ передан</span><code>{String(chunkTranscription.diagnostics.apiKeyPresent)}</code>
+                        <span>запрос начат</span><code>{formatDiagnosticTimestamp(chunkTranscription.diagnostics.requestStartedAt)}</code>
+                        <span>статус ответа</span><code>{chunkTranscription.diagnostics.responseStatus ?? "—"}</code>
+                        <span>ошибка</span><code>{chunkTranscription.diagnostics.error ?? "—"}</code>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {microphoneRecorder.usedDefaultDevice ? <div className="recorder-warning">{t("defaultDeviceFallback")}</div> : null}
@@ -839,6 +866,8 @@ function createLiveDecisionDiagnostics(
     intent: contextDecision.intent,
     answerSourceMode,
     sensitivity: contextDecision.sensitivity,
+    decisionSource: contextDecision.decisionSource,
+    pendingRequestText: contextDecision.pendingRequestText,
     decision,
     reason,
     cooldownRemainingMs: contextDecision.cooldownRemainingMs,
