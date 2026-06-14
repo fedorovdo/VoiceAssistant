@@ -15,7 +15,7 @@ export type LiveAssistAction =
   | "missing_api_key";
 
 export interface LiveAssistDecisionInput {
-  contextDecision: Pick<LiveContextDecision, "intent" | "shouldAnswer" | "shouldWait" | "reason">;
+  contextDecision: Pick<LiveContextDecision, "intent" | "sensitivity" | "shouldAnswer" | "shouldWait" | "reason">;
   answerSourceMode: AnswerSourceMode;
   hasLocalMatch: boolean;
   hasApiKey: boolean;
@@ -32,21 +32,21 @@ export function resolveLiveAssistDecision(input: LiveAssistDecisionInput): LiveA
   const { contextDecision } = input;
 
   if (contextDecision.intent === "topic_intro") {
-    return { action: "topic_intro", reason: contextDecision.reason };
+    return { action: "topic_intro", reason: decisionReason(contextDecision, contextDecision.reason) };
   }
 
   if (contextDecision.shouldWait) {
-    return { action: "wait", reason: contextDecision.reason };
+    return { action: "wait", reason: decisionReason(contextDecision, contextDecision.reason) };
   }
 
   if (!contextDecision.shouldAnswer) {
     if (contextDecision.reason === "duplicate") {
-      return { action: "duplicate", reason: contextDecision.reason };
+      return { action: "duplicate", reason: decisionReason(contextDecision, contextDecision.reason) };
     }
     if (contextDecision.reason === "topic_cooldown") {
-      return { action: "cooldown", reason: contextDecision.reason };
+      return { action: "cooldown", reason: decisionReason(contextDecision, contextDecision.reason) };
     }
-    return { action: "ignore", reason: contextDecision.reason };
+    return { action: "ignore", reason: decisionReason(contextDecision, contextDecision.reason) };
   }
 
   const sourceResolution = resolveAnswerSource({
@@ -57,13 +57,20 @@ export function resolveLiveAssistDecision(input: LiveAssistDecisionInput): LiveA
   });
 
   if (sourceResolution === "local-not-found") {
-    return { action: "no_local_match", reason: sourceResolution, sourceResolution };
+    return { action: "no_local_match", reason: decisionReason(contextDecision, sourceResolution), sourceResolution };
   }
   if (sourceResolution === "gpt-key-required" || sourceResolution === "hybrid-key-required") {
-    return { action: "missing_api_key", reason: sourceResolution, sourceResolution };
+    return { action: "missing_api_key", reason: decisionReason(contextDecision, sourceResolution), sourceResolution };
   }
 
-  return { action: "answer", reason: sourceResolution, sourceResolution };
+  return { action: "answer", reason: decisionReason(contextDecision, sourceResolution), sourceResolution };
+}
+
+function decisionReason(
+  contextDecision: Pick<LiveContextDecision, "reason" | "sensitivity">,
+  outcome: string
+): string {
+  return `context=${contextDecision.reason}; outcome=${outcome}; sensitivity=${contextDecision.sensitivity}`;
 }
 
 export function findLiveKnowledgeCards(

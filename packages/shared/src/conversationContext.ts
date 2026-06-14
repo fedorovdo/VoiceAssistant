@@ -1,6 +1,8 @@
 import { classifyTechnicalFragment } from "./liveAssist.js";
 import type { FragmentClassification } from "./liveAssist.js";
 
+export type LiveAssistSensitivity = "conservative" | "balanced" | "active";
+
 export type TechnicalTopic =
   | "Linux"
   | "Docker"
@@ -36,6 +38,7 @@ export type LiveContextDecisionReason =
   | "topic_intro"
   | "incomplete"
   | "ignored"
+  | "active_topic_fragment"
   | "duplicate"
   | "topic_cooldown";
 
@@ -48,6 +51,7 @@ export interface LiveContextDecision extends ConversationContextSnapshot {
   shouldWait: boolean;
   reason: LiveContextDecisionReason;
   cooldownRemainingMs: number;
+  sensitivity: LiveAssistSensitivity;
 }
 
 export interface ConversationContextOptions {
@@ -155,7 +159,7 @@ export class ConversationContextBuffer {
     this.topicCooldownMs = options.topicCooldownMs ?? 30_000;
   }
 
-  add(text: string, timestamp = Date.now()): LiveContextDecision {
+  add(text: string, timestamp = Date.now(), sensitivity: LiveAssistSensitivity = "balanced"): LiveContextDecision {
     this.prune(timestamp);
     const cleanedText = cleanupText(text);
     const fragmentTopic = detectTechnicalTopic(cleanedText);
@@ -174,37 +178,47 @@ export class ConversationContextBuffer {
     const aggregatedClassification = classifyTechnicalFragment(aggregatedText).classification;
 
     if (isLikelyIncompleteConversationFragment(cleanedText)) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "wait", false, true, "incomplete");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "wait", false, true, "incomplete", sensitivity);
     }
 
     if (isTopicIntroduction(cleanedText, fragmentTopic.currentTopic)) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "topic_intro", false, false, "topic_intro");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "topic_intro", false, false, "topic_intro", sensitivity);
     }
 
     if (ignoredConversationPatterns.some((pattern) => pattern.test(normalizedText))) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored", sensitivity);
     }
 
     const hasIntent = hasAnswerIntent(aggregatedText);
-    const shouldAnswer = aggregatedClassification === "explicit_question"
+    const balancedAnswer = aggregatedClassification === "explicit_question"
       || (snapshot.currentTopic !== null && hasIntent);
+    const conservativeAnswer = snapshot.currentTopic !== null && hasIntent;
+    const activeTopicAnswer = isActiveTopicRequest(cleanedText, snapshot.currentTopic, classification);
+    const shouldAnswer = sensitivity === "conservative"
+      ? conservativeAnswer
+      : sensitivity === "active"
+        ? balancedAnswer || activeTopicAnswer
+        : balancedAnswer;
+    const answerReason: LiveContextDecisionReason = activeTopicAnswer && !balancedAnswer
+      ? "active_topic_fragment"
+      : "answer";
 
     if (!shouldAnswer) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored", sensitivity);
     }
 
     if (this.answeredFragments.has(normalizedText)) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", false, false, "duplicate");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", false, false, "duplicate", sensitivity);
     }
 
     const cooldownRemainingMs = snapshot.currentTopic
-      ? this.getTopicCooldownRemaining(snapshot.currentTopic, normalizedText, timestamp)
+      ? this.getTopicCooldownRemaining(snapshot.currentTopic, normalizedText, timestamp, sensitivity)
       : 0;
     if (cooldownRemainingMs > 0) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", false, false, "topic_cooldown", cooldownRemainingMs);
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", false, false, "topic_cooldown", sensitivity, cooldownRemainingMs);
     }
 
-    return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", true, false, "answer");
+    return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", true, false, answerReason, sensitivity);
   }
 
   markAnswered(result: Pick<LiveContextDecision, "normalizedText" | "currentTopic">, timestamp = Date.now()) {
@@ -234,12 +248,18 @@ export class ConversationContextBuffer {
     this.lastTopicAnswers.clear();
   }
 
-  private getTopicCooldownRemaining(topic: TechnicalTopic, normalizedText: string, timestamp: number): number {
+  private getTopicCooldownRemaining(
+    topic: TechnicalTopic,
+    normalizedText: string,
+    timestamp: number,
+    sensitivity: LiveAssistSensitivity
+  ): number {
     const lastAnswer = this.lastTopicAnswers.get(topic);
     if (!lastAnswer) return 0;
 
     const elapsed = timestamp - lastAnswer.timestamp;
-    if (elapsed >= this.topicCooldownMs || textSimilarity(lastAnswer.normalizedText, normalizedText) < 0.72) {
+    const similarityThreshold = sensitivity === "conservative" ? 0.55 : sensitivity === "active" ? 0.88 : 0.72;
+    if (elapsed >= this.topicCooldownMs || textSimilarity(lastAnswer.normalizedText, normalizedText) < similarityThreshold) {
       return 0;
     }
 
@@ -337,6 +357,21 @@ export function isTopicIntroduction(text: string, topic = detectTechnicalTopic(t
     && !hasAnswerIntent(normalized);
 }
 
+function isActiveTopicRequest(
+  text: string,
+  currentTopic: TechnicalTopic | null,
+  classification: FragmentClassification
+): boolean {
+  if (!currentTopic) return false;
+  const normalized = normalizeContextText(text);
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+  if (wordCount > 9) return false;
+
+  return classification === "technical_term"
+    || /\b(?:логи?|logs?|команд[ыау]?|commands?|ошибк[аи]?|error|troubleshoot)\b/i.test(normalized)
+    || /(?:не\s+(?:стартует|запускается|работает)|cannot\s+(?:start|run)|won't\s+start)/i.test(normalized);
+}
+
 function hasAnswerIntent(text: string): boolean {
   return hasQuestionIntent(text)
     || explanatoryIntentPatterns.some((pattern) => pattern.test(text))
@@ -358,9 +393,10 @@ function decision(
   shouldAnswer: boolean,
   shouldWait: boolean,
   reason: LiveContextDecisionReason,
+  sensitivity: LiveAssistSensitivity,
   cooldownRemainingMs = 0
 ): LiveContextDecision {
-  return { ...snapshot, aggregatedText, normalizedText, classification, intent, shouldAnswer, shouldWait, reason, cooldownRemainingMs };
+  return { ...snapshot, aggregatedText, normalizedText, classification, intent, shouldAnswer, shouldWait, reason, cooldownRemainingMs, sensitivity };
 }
 
 function addSentencePunctuation(text: string, question: boolean): string {

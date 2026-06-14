@@ -10,6 +10,7 @@ import type {
   LayoutMode,
   LiveAssistAction,
   LiveAssistIntent,
+  LiveAssistSensitivity,
   LiveContextDecision,
   FragmentClassification,
   SanitizedTranscript,
@@ -46,6 +47,7 @@ const defaultSettings: DesktopSettings = {
   audioInputDeviceId: "",
   answerMode: "short",
   answerSourceMode: "local-plus-gpt",
+  liveAssistSensitivity: "balanced",
   workMode: "manual",
   layoutMode: "vertical",
   speechToTextProvider: "mock"
@@ -78,6 +80,7 @@ interface LiveDecisionDiagnostics {
   cooldownRemainingMs: number;
   intent: LiveAssistIntent;
   localMatchFound: boolean;
+  sensitivity: LiveAssistSensitivity;
 }
 
 export function App() {
@@ -303,7 +306,7 @@ export function App() {
     }
     void source;
 
-    const contextDecision = conversationContextRef.current.add(fragment);
+    const contextDecision = conversationContextRef.current.add(fragment, Date.now(), settings.liveAssistSensitivity);
     setLiveContextStatus({
       currentTopic: contextDecision.currentTopic,
       fragmentCount: contextDecision.fragments.length
@@ -413,7 +416,7 @@ export function App() {
       }
       setRecognitionMessage("");
     }, Math.max(liveDebounceMs, throttleDelay));
-  }, [requestAnswer, settings.answerMode, settings.answerSourceMode, settings.apiKey, settings.workMode, showLocalAnswer, t]);
+  }, [requestAnswer, settings.answerMode, settings.answerSourceMode, settings.apiKey, settings.liveAssistSensitivity, settings.workMode, showLocalAnswer, t]);
 
   liveFragmentHandlerRef.current = queueLiveAnswer;
 
@@ -603,6 +606,11 @@ export function App() {
         {settings.speechToTextProvider === "mock" ? <span className="mode-badge simulated-badge">{t("mockStt")} · {t("simulatedMode")}</span> : null}
         {settings.speechToTextProvider === "microphone" ? <span className="mode-badge recording-badge">{t("microphoneCapture")}</span> : null}
         {settings.answerSourceMode === "local-only" ? <span className="mode-badge">{t("localOnlyModeStatus")}</span> : null}
+        {settings.workMode === "live" ? (
+          <span className="mode-badge">
+            {t("sensitivityStatus")}: {getSensitivityLabel(settings.liveAssistSensitivity, t).toLowerCase()}
+          </span>
+        ) : null}
         {normalizedTerms.length > 0 ? (
           <span className="status-note normalized-terms-note">{t("termsNormalized")}: {normalizedTerms.join(", ")}</span>
         ) : null}
@@ -662,6 +670,7 @@ export function App() {
                 <span>классификация</span><code>{liveDecisionDiagnostics.classification}</code>
                 <span>намерение</span><code>{liveDecisionDiagnostics.intent}</code>
                 <span>источник ответа</span><code>{liveDecisionDiagnostics.answerSourceMode}</code>
+                <span>чувствительность</span><code>{liveDecisionDiagnostics.sensitivity}</code>
                 <span>локальное совпадение</span><code>{String(liveDecisionDiagnostics.localMatchFound)}</code>
                 <span>решение</span><code>{liveDecisionDiagnostics.decision}</code>
                 <span>причина</span><code>{liveDecisionDiagnostics.reason}</code>
@@ -798,6 +807,7 @@ export function App() {
             </div>
 
             <div className="settings-field"><label htmlFor="work-mode">{t("workMode")}</label><select id="work-mode" value={settings.workMode} onChange={(event) => setSettings({ ...settings, workMode: event.target.value as WorkMode })}><option value="manual">{t("manual")}</option><option value="live">{t("live")}</option></select></div>
+            <div className="settings-field"><label htmlFor="live-assist-sensitivity">{t("liveAssistSensitivity")}</label><select id="live-assist-sensitivity" value={settings.liveAssistSensitivity} onChange={(event) => setSettings({ ...settings, liveAssistSensitivity: event.target.value as LiveAssistSensitivity })}><option value="conservative">{t("sensitivityConservative")}</option><option value="balanced">{t("sensitivityBalanced")}</option><option value="active">{t("sensitivityActive")}</option></select></div>
             <div className="settings-field"><label htmlFor="layout-mode">{t("layoutMode")}</label><select id="layout-mode" value={settings.layoutMode} onChange={(event) => setSettings({ ...settings, layoutMode: event.target.value as LayoutMode })}><option value="vertical">{t("verticalLayout")}</option><option value="horizontal">{t("horizontalLayout")}</option></select></div>
             <div className="settings-field"><label htmlFor="speech-provider">{t("speechProvider")}</label><select id="speech-provider" value={settings.speechToTextProvider} onChange={(event) => setSettings({ ...settings, speechToTextProvider: event.target.value as SpeechToTextProviderId })}><option value="disabled">{t("disabled")}</option><option value="mock">{t("mockSimulated")}</option><option value="microphone">{t("microphoneProvider")}</option></select></div>
             <div className="settings-field"><label htmlFor="interface-language">{t("interfaceLanguage")}</label><select id="interface-language" value={settings.interfaceLanguage} onChange={(event) => setSettings({ ...settings, interfaceLanguage: event.target.value as AppLanguage })}><option value="ru">{t("russian")}</option><option value="en">{t("english")}</option></select></div>
@@ -828,11 +838,21 @@ function createLiveDecisionDiagnostics(
     classification: contextDecision.classification,
     intent: contextDecision.intent,
     answerSourceMode,
+    sensitivity: contextDecision.sensitivity,
     decision,
     reason,
     cooldownRemainingMs: contextDecision.cooldownRemainingMs,
     localMatchFound
   };
+}
+
+function getSensitivityLabel(
+  sensitivity: LiveAssistSensitivity,
+  t: ReturnType<typeof createTranslator>
+): string {
+  if (sensitivity === "conservative") return t("sensitivityConservative");
+  if (sensitivity === "active") return t("sensitivityActive");
+  return t("sensitivityBalanced");
 }
 
 function formatCooldown(cooldownRemainingMs: number): string {

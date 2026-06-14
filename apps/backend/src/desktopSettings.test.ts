@@ -11,6 +11,7 @@ const defaults: DesktopSettings = {
   audioInputDeviceId: "",
   answerMode: "short",
   answerSourceMode: "local-plus-gpt",
+  liveAssistSensitivity: "balanced",
   workMode: "manual",
   layoutMode: "vertical",
   speechToTextProvider: "mock"
@@ -37,6 +38,7 @@ test("settings migration adds answerSourceMode without dropping microphone setti
     audioInputDeviceId: "microphone-device-id",
     answerMode: "learning",
     answerSourceMode: "local-plus-gpt",
+    liveAssistSensitivity: "balanced",
     workMode: "live",
     layoutMode: "horizontal",
     speechToTextProvider: "microphone"
@@ -52,7 +54,20 @@ test("settings migration keeps valid source mode independent from transcription 
   }, defaults);
 
   assert.equal(migrated.answerSourceMode, "local-only");
+  assert.equal(migrated.liveAssistSensitivity, "balanced");
   assert.equal(migrated.apiKey, "sk-transcription-test-key");
   assert.equal(migrated.answerLanguage, "ru");
+  assert.equal(migrated.speechToTextProvider, "microphone");
+});
+
+test("settings migration preserves a valid Live Assist sensitivity", () => {
+  const migrated = migrateDesktopSettings({
+    liveAssistSensitivity: "active",
+    apiKey: "sk-sensitivity-test-key",
+    speechToTextProvider: "microphone"
+  }, defaults);
+
+  assert.equal(migrated.liveAssistSensitivity, "active");
+  assert.equal(migrated.apiKey, "sk-sensitivity-test-key");
   assert.equal(migrated.speechToTextProvider, "microphone");
 });

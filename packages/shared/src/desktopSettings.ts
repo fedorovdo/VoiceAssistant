@@ -3,6 +3,7 @@ import type {
   AppLanguage,
   DesktopSettings,
   LayoutMode,
+  LiveAssistSensitivity,
   SpeechToTextProviderId,
   WorkMode
 } from "./index.js";
@@ -29,6 +30,9 @@ export function migrateDesktopSettings(value: unknown, defaults: DesktopSettings
     answerSourceMode: isAnswerSourceMode(settings.answerSourceMode)
       ? settings.answerSourceMode
       : "local-plus-gpt",
+    liveAssistSensitivity: isLiveAssistSensitivity(settings.liveAssistSensitivity)
+      ? settings.liveAssistSensitivity
+      : "balanced",
     workMode: isWorkMode(settings.workMode) ? settings.workMode : defaults.workMode,
     layoutMode: isLayoutMode(settings.layoutMode) ? settings.layoutMode : defaults.layoutMode,
     speechToTextProvider: isSpeechProvider(settings.speechToTextProvider)
@@ -51,6 +55,10 @@ function isAnswerMode(value: unknown): value is AnswerMode {
 
 function isAnswerSourceMode(value: unknown): value is AnswerSourceMode {
   return value === "local-only" || value === "local-plus-gpt" || value === "gpt-only";
+}
+
+function isLiveAssistSensitivity(value: unknown): value is LiveAssistSensitivity {
+  return value === "conservative" || value === "balanced" || value === "active";
 }
 
 function isWorkMode(value: unknown): value is WorkMode {

@@ -131,3 +131,25 @@ test("topic introduction is skipped without being treated as generic ignore", ()
 
   assert.equal(decision.action, "topic_intro");
 });
+
+test("local-only active sensitivity uses topic context for a short fragment", () => {
+  const context = new ConversationContextBuffer();
+  context.add("Поговорим про Docker", 1_000, "active");
+  const contextDecision = context.add("логи контейнера", 2_000, "active");
+  const matches = findLiveKnowledgeCards(
+    "логи контейнера",
+    contextDecision.aggregatedText,
+    contextDecision.currentTopic
+  );
+  const decision = resolveLiveAssistDecision({
+    contextDecision,
+    answerSourceMode: "local-only",
+    hasLocalMatch: matches.length > 0,
+    hasApiKey: false,
+    answerMode: "short"
+  });
+
+  assert.equal(matches[0]?.id, "docker-logs");
+  assert.equal(decision.action, "answer");
+  assert.match(decision.reason, /sensitivity=active/);
+});

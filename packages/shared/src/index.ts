@@ -1,4 +1,5 @@
 import type { AnswerSourceMode } from "./answerSource.js";
+import type { LiveAssistSensitivity } from "./conversationContext.js";
 
 export type AnswerMode = "short" | "interview" | "learning";
 
@@ -11,6 +12,7 @@ export type LayoutMode = "vertical" | "horizontal";
 export type SpeechToTextProviderId = "disabled" | "mock" | "microphone";
 
 export type { AnswerSourceMode } from "./answerSource.js";
+export type { LiveAssistSensitivity } from "./conversationContext.js";
 
 export interface AssistantAnswerRequest {
   text: string;
@@ -33,6 +35,7 @@ export interface DesktopSettings {
   audioInputDeviceId: string;
   answerMode: AnswerMode;
   answerSourceMode: AnswerSourceMode;
+  liveAssistSensitivity: LiveAssistSensitivity;
   workMode: WorkMode;
   layoutMode: LayoutMode;
   speechToTextProvider: SpeechToTextProviderId;

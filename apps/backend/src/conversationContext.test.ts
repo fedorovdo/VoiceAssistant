@@ -41,6 +41,18 @@ test("topic introduction sets Kubernetes context without requesting an answer", 
   assert.equal(result.reason, "topic_intro");
 });
 
+test("conservative sensitivity keeps topic introduction context-only", () => {
+  const result = new ConversationContextBuffer().add(
+    "Давайте поговорим о Kubernetes",
+    1_000,
+    "conservative"
+  );
+
+  assert.equal(result.intent, "topic_intro");
+  assert.equal(result.shouldAnswer, false);
+  assert.equal(result.sensitivity, "conservative");
+});
+
 test("short command request uses the current Kubernetes topic", () => {
   const context = new ConversationContextBuffer();
   context.add("Давайте поговорим о Kubernetes", 1_000);
@@ -58,6 +70,45 @@ test("explicit Kubernetes command list is an answer request", () => {
   assert.equal(result.intent, "answer_request");
   assert.equal(result.shouldAnswer, true);
   assert.equal(result.currentTopic, "Kubernetes");
+});
+
+test("balanced sensitivity preserves explicit command request behavior", () => {
+  const result = new ConversationContextBuffer().add(
+    "Перечислите основные команды Kubernetes",
+    1_000,
+    "balanced"
+  );
+
+  assert.equal(result.shouldAnswer, true);
+  assert.equal(result.intent, "answer_request");
+  assert.equal(result.sensitivity, "balanced");
+});
+
+test("active sensitivity answers short Kubernetes commands fragment", () => {
+  const context = new ConversationContextBuffer();
+  context.add("Тема Kubernetes", 1_000, "active");
+  const result = context.add("основные команды", 2_000, "active");
+
+  assert.equal(result.shouldAnswer, true);
+  assert.equal(result.intent, "answer_request");
+  assert.equal(result.currentTopic, "Kubernetes");
+});
+
+test("active sensitivity answers short Docker logs fragment", () => {
+  const context = new ConversationContextBuffer();
+  context.add("Поговорим про Docker", 1_000, "active");
+  const result = context.add("логи контейнера", 2_000, "active");
+
+  assert.equal(result.shouldAnswer, true);
+  assert.equal(result.intent, "answer_request");
+  assert.equal(result.currentTopic, "Docker");
+});
+
+test("active sensitivity answers a short troubleshooting fragment", () => {
+  const result = new ConversationContextBuffer().add("контейнер не стартует", 1_000, "active");
+
+  assert.equal(result.shouldAnswer, true);
+  assert.equal(result.reason, "active_topic_fragment");
 });
 
 test("conversation context answers an explicit Docker question", () => {
@@ -109,6 +160,16 @@ test("conversation context blocks an identical answered fragment", () => {
   assert.equal(duplicate.reason, "duplicate");
 });
 
+test("active sensitivity still blocks an exact duplicate", () => {
+  const context = new ConversationContextBuffer();
+  const first = context.add("контейнер не стартует", 1_000, "active");
+  context.markAnswered(first, 1_000);
+  const duplicate = context.add("контейнер не стартует", 2_000, "active");
+
+  assert.equal(duplicate.shouldAnswer, false);
+  assert.equal(duplicate.reason, "duplicate");
+});
+
 test("conversation context cooldown blocks a near-duplicate question", () => {
   const context = new ConversationContextBuffer({ topicCooldownMs: 30_000 });
   const first = context.add("Как работает Kubernetes scheduler?", 1_000);
@@ -127,4 +188,12 @@ test("conversation context ignores non-technical meeting housekeeping", () => {
   assert.equal(result.reason, "ignored");
   assert.equal(result.intent, "ignore");
   assert.equal(result.currentTopic, null);
+});
+
+test("non-technical phrase is ignored in every sensitivity mode", () => {
+  for (const sensitivity of ["conservative", "balanced", "active"] as const) {
+    const result = new ConversationContextBuffer().add("Давайте вернемся после обеда", 1_000, sensitivity);
+    assert.equal(result.shouldAnswer, false);
+    assert.equal(result.intent, "ignore");
+  }
 });

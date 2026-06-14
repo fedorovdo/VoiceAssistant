@@ -96,6 +96,14 @@ Topic introductions such as `Давайте поговорим о Kubernetes` se
 
 Live answers are designed for mixed audiences and stay concise. Learning mode may provide a longer explanation.
 
+The **Live Assist sensitivity** setting controls how readily automatic answers are produced:
+
+- **Conservative** answers only clear technical questions and strong command/help requests. Topic introductions only set context, and near-duplicate cooldown is stricter. This suits quieter meetings.
+- **Balanced** is the default and preserves the normal Live Assist behavior for everyday use.
+- **Active** also treats short technical or troubleshooting fragments as requests when a topic is known, for example `основные команды`, `логи контейнера`, or `контейнер не стартует`. It still rejects obvious noise and exact duplicates, while allowing more distinct same-topic follow-ups for learning sessions.
+
+The selected sensitivity is stored with the other desktop settings, shown in the Live Assist badge, and included in development decision diagnostics.
+
 Live Assist also keeps a lightweight in-memory context of up to ten recent accepted fragments for roughly 90 seconds. It detects the current broad technical topic, may combine a topic-setting phrase with the next question, and can wait briefly when a phrase appears incomplete. Local knowledge checks the newest fragment first and then the compact aggregate, while GPT receives the aggregate. Cooldown blocks exact and near-duplicate questions without suppressing a clearly different follow-up on the same topic.
 
 Development builds include a compact Live Assist decision panel. It shows the accepted raw and normalized fragment, aggregate, topic, classification, answer-source mode, final decision, reason, and remaining cooldown. It contains no API keys, raw audio, or persisted conversation data and is intended for tuning automatic-answer behavior.
