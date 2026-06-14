@@ -24,6 +24,17 @@ async function createWindow() {
     }
   });
 
+  if (!app.isPackaged) {
+    window.webContents.on("before-input-event", (event, input) => {
+      const opensDevTools = input.key === "F12"
+        || (input.control && input.shift && input.key.toLowerCase() === "i");
+      if (opensDevTools) {
+        event.preventDefault();
+        window.webContents.toggleDevTools();
+      }
+    });
+  }
+
   if (process.env.VITE_DEV_SERVER_URL) {
     await window.loadURL(process.env.VITE_DEV_SERVER_URL);
     return;

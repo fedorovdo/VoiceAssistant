@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { Mic, Play, RefreshCw, Send, Settings, ShieldCheck, Square, Trash2, X } from "lucide-react";
 import type {
   AnswerMode,
+  AnswerSourceMode,
   AppLanguage,
   AssistantAnswerResponse,
   DesktopSettings,
@@ -11,7 +12,14 @@ import type {
   SpeechToTextProviderId,
   WorkMode
 } from "@voiceassistant/shared";
-import { classifyTechnicalFragment, findKnowledgeCards, sanitizeTranscript } from "@voiceassistant/shared";
+import {
+  classifyTechnicalFragment,
+  findKnowledgeCards,
+  migrateDesktopSettings,
+  resolveAnswerSource,
+  sanitizeTranscript,
+  shouldSearchLocalKnowledge
+} from "@voiceassistant/shared";
 import { createTranslator } from "./i18n.js";
 import { MicrophoneLevelMeter } from "./MicrophoneLevelMeter.js";
 import { createSpeechToTextProvider } from "./speech/createSpeechToTextProvider.js";
@@ -29,6 +37,7 @@ const defaultSettings: DesktopSettings = {
   answerLanguage: "ru",
   audioInputDeviceId: "",
   answerMode: "short",
+  answerSourceMode: "local-plus-gpt",
   workMode: "manual",
   layoutMode: "vertical",
   speechToTextProvider: "mock"
@@ -273,7 +282,9 @@ export function App() {
       return;
     }
 
-    const knowledgeMatches = findKnowledgeCards(fragment);
+    const knowledgeMatches = shouldSearchLocalKnowledge(settings.answerSourceMode)
+      ? findKnowledgeCards(fragment)
+      : [];
 
     if (source === "microphone") {
       setRecognitionMessage(t("livePreparingAnswer"));
@@ -288,22 +299,39 @@ export function App() {
       answeredFragmentsRef.current.add(detection.normalizedText);
       lastLiveAnswerAtRef.current = Date.now();
 
-      if (knowledgeMatches.length > 0) {
+      const resolution = resolveAnswerSource({
+        mode: settings.answerSourceMode,
+        hasLocalMatch: knowledgeMatches.length > 0,
+        hasApiKey: settings.apiKey.trim().length > 0,
+        answerMode: settings.answerMode
+      });
+
+      if (resolution === "local" || resolution === "local-and-gpt") {
         showLocalAnswer(knowledgeMatches);
-        const shouldEnrich = settings.apiKey.trim().length > 0 && settings.answerMode !== "short";
-        if (!shouldEnrich) {
-          if (source === "microphone") setRecognitionMessage("");
-          return;
-        }
       }
 
-      if (!settings.apiKey.trim()) {
+      if (resolution === "local") {
+        if (source === "microphone") setRecognitionMessage("");
+        return;
+      }
+
+      if (resolution === "local-not-found") {
+        if (source === "microphone") setRecognitionMessage(t("localKnowledgeNotFound"));
+        return;
+      }
+
+      if (resolution === "gpt-key-required") {
+        if (source === "microphone") setRecognitionMessage(t("gptModeRequiresApiKey"));
+        return;
+      }
+
+      if (resolution === "hybrid-key-required") {
         setError(t("localKnowledgeMissApiKey"));
         if (source === "microphone") setRecognitionMessage("");
         return;
       }
 
-      const sent = await requestAnswer(fragment, "live", knowledgeMatches.length > 0);
+      const sent = await requestAnswer(fragment, "live", resolution === "local-and-gpt");
       if (!sent) {
         answeredFragmentsRef.current.delete(detection.normalizedText);
       }
@@ -311,7 +339,7 @@ export function App() {
         setRecognitionMessage("");
       }
     }, Math.max(liveDebounceMs, throttleDelay));
-  }, [requestAnswer, settings.answerMode, settings.apiKey, settings.workMode, showLocalAnswer, t]);
+  }, [requestAnswer, settings.answerMode, settings.answerSourceMode, settings.apiKey, settings.workMode, showLocalAnswer, t]);
 
   liveFragmentHandlerRef.current = queueLiveAnswer;
 
@@ -388,28 +416,42 @@ export function App() {
     }
 
     setError("");
-    setIsSearchingLocal(true);
-    await showLocalSearchFeedback();
-    const knowledgeMatches = findKnowledgeCards(sanitizedManualText);
-    setIsSearchingLocal(false);
-
-    if (knowledgeMatches.length > 0) {
-      showLocalAnswer(knowledgeMatches);
-      const shouldEnrich = settings.apiKey.trim().length > 0 && settings.answerMode !== "short";
-      if (!shouldEnrich) {
-        return;
-      }
+    let knowledgeMatches: KnowledgeCard[] = [];
+    if (shouldSearchLocalKnowledge(settings.answerSourceMode)) {
+      setIsSearchingLocal(true);
+      await showLocalSearchFeedback();
+      knowledgeMatches = findKnowledgeCards(sanitizedManualText);
+      setIsSearchingLocal(false);
     }
 
-    if (!settings.apiKey.trim()) {
-      setAnswer("");
-      setLocalAnswerCards([]);
-      setAnswerSource(undefined);
-      setError(t("localKnowledgeMissApiKey"));
+    const resolution = resolveAnswerSource({
+      mode: settings.answerSourceMode,
+      hasLocalMatch: knowledgeMatches.length > 0,
+      hasApiKey: settings.apiKey.trim().length > 0,
+      answerMode: settings.answerMode
+    });
+
+    if (resolution === "local" || resolution === "local-and-gpt") {
+      showLocalAnswer(knowledgeMatches);
+    }
+
+    if (resolution === "local") {
       return;
     }
 
-    await requestAnswer(sanitizedManualText, "manual", knowledgeMatches.length > 0);
+    if (resolution === "local-not-found" || resolution === "gpt-key-required" || resolution === "hybrid-key-required") {
+      setAnswer("");
+      setLocalAnswerCards([]);
+      setAnswerSource(undefined);
+      setError(t(resolution === "local-not-found"
+        ? "localKnowledgeNotFound"
+        : resolution === "gpt-key-required"
+          ? "gptModeRequiresApiKey"
+          : "localKnowledgeMissApiKey"));
+      return;
+    }
+
+    await requestAnswer(sanitizedManualText, "manual", resolution === "local-and-gpt");
   }
 
   async function requestMicrophonePermission() {
@@ -471,6 +513,7 @@ export function App() {
         </span>
         {settings.speechToTextProvider === "mock" ? <span className="mode-badge simulated-badge">{t("mockStt")} · {t("simulatedMode")}</span> : null}
         {settings.speechToTextProvider === "microphone" ? <span className="mode-badge recording-badge">{t("microphoneCapture")}</span> : null}
+        {settings.answerSourceMode === "local-only" ? <span className="mode-badge">{t("localOnlyModeStatus")}</span> : null}
         <span className="status-note">{settings.speechToTextProvider === "microphone" ? t("experimentalStt") : t("microphoneSttAvailable")}</span>
       </div>
 
@@ -529,6 +572,19 @@ export function App() {
               <div className={sttCleanupStatus === "skipped" ? "recorder-warning" : "transcription-status"}>
                 {t("sttCleanupStatus")}: {getSttCleanupStatusText(sttCleanupStatus, t)}
               </div>
+              {import.meta.env.DEV && chunkTranscription.diagnostics ? (
+                <div className="stt-diagnostics">
+                  <strong>Диагностика STT</strong>
+                  <div className="stt-diagnostics-grid">
+                    <span>размер чанка</span><code>{chunkTranscription.diagnostics.chunkSize} байт</code>
+                    <span>тип чанка</span><code>{chunkTranscription.diagnostics.chunkMimeType}</code>
+                    <span>ключ передан</span><code>{String(chunkTranscription.diagnostics.apiKeyPresent)}</code>
+                    <span>запрос начат</span><code>{formatDiagnosticTimestamp(chunkTranscription.diagnostics.requestStartedAt)}</code>
+                    <span>статус ответа</span><code>{chunkTranscription.diagnostics.responseStatus ?? "—"}</code>
+                    <span>ошибка</span><code>{chunkTranscription.diagnostics.error ?? "—"}</code>
+                  </div>
+                </div>
+              ) : null}
               {microphoneRecorder.usedDefaultDevice ? <div className="recorder-warning">{t("defaultDeviceFallback")}</div> : null}
             </div>
           ) : null}
@@ -602,6 +658,7 @@ export function App() {
 
             <label>{t("openAiApiKey")}<input type="password" value={settings.apiKey} onChange={(event) => setSettings({ ...settings, apiKey: event.target.value })} placeholder={t("apiKeyPlaceholder")} /></label>
             <label>{t("answerModel")}<input type="text" value={settings.model} onChange={(event) => setSettings({ ...settings, model: event.target.value })} /></label>
+            <div className="settings-field"><label htmlFor="answer-source-mode">{t("answerSource")}</label><select id="answer-source-mode" value={settings.answerSourceMode} onChange={(event) => setSettings({ ...settings, answerSourceMode: event.target.value as AnswerSourceMode })}><option value="local-only">{t("localOnly")}</option><option value="local-plus-gpt">{t("localPlusGpt")}</option><option value="gpt-only">{t("gptOnly")}</option></select></div>
 
             <div className="settings-field">
               <label htmlFor="audio-input-device">{t("audioInputDevice")}</label>
@@ -637,28 +694,11 @@ function loadSettings(): DesktopSettings {
   if (!rawSettings) return defaultSettings;
 
   try {
-    const parsed = JSON.parse(rawSettings) as Partial<DesktopSettings> & { language?: AppLanguage };
-    return {
-      apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : defaultSettings.apiKey,
-      model: typeof parsed.model === "string" ? parsed.model : defaultSettings.model,
-      interfaceLanguage: isLanguage(parsed.interfaceLanguage) ? parsed.interfaceLanguage : defaultSettings.interfaceLanguage,
-      answerLanguage: isLanguage(parsed.answerLanguage) ? parsed.answerLanguage : isLanguage(parsed.language) ? parsed.language : defaultSettings.answerLanguage,
-      audioInputDeviceId: typeof parsed.audioInputDeviceId === "string" ? parsed.audioInputDeviceId : "",
-      answerMode: isAnswerMode(parsed.answerMode) ? parsed.answerMode : defaultSettings.answerMode,
-      workMode: isWorkMode(parsed.workMode) ? parsed.workMode : defaultSettings.workMode,
-      layoutMode: isLayoutMode(parsed.layoutMode) ? parsed.layoutMode : defaultSettings.layoutMode,
-      speechToTextProvider: isSpeechProvider(parsed.speechToTextProvider) ? parsed.speechToTextProvider : defaultSettings.speechToTextProvider
-    };
+    return migrateDesktopSettings(JSON.parse(rawSettings), defaultSettings);
   } catch {
     return defaultSettings;
   }
 }
-
-function isLanguage(value: unknown): value is AppLanguage { return value === "ru" || value === "en"; }
-function isAnswerMode(value: unknown): value is AnswerMode { return value === "short" || value === "interview" || value === "learning"; }
-function isWorkMode(value: unknown): value is WorkMode { return value === "manual" || value === "live"; }
-function isLayoutMode(value: unknown): value is LayoutMode { return value === "vertical" || value === "horizontal"; }
-function isSpeechProvider(value: unknown): value is SpeechToTextProviderId { return value === "disabled" || value === "mock" || value === "microphone"; }
 
 function loadSplitterRatio(): number {
   const storedRatio = localStorage.getItem(splitterRatioStorageKey);
@@ -750,6 +790,11 @@ function getSttCleanupStatusText(
   if (status === "skipped") return t("sttCleanupSkipped");
   if (status === "waiting") return t("sttCleanupWaiting");
   return t("sttCleanupIdle");
+}
+
+function formatDiagnosticTimestamp(timestamp: string): string {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? timestamp : date.toLocaleTimeString("ru-RU");
 }
 
 function formatKnowledgeCards(cards: KnowledgeCard[], language: AppLanguage): string {

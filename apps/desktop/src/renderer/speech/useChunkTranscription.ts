@@ -9,6 +9,15 @@ export type TranscriptionStatus =
   | "missing_api_key"
   | "error";
 
+export interface TranscriptionDiagnostics {
+  chunkSize: number;
+  chunkMimeType: string;
+  apiKeyPresent: boolean;
+  requestStartedAt: string;
+  responseStatus?: number;
+  error?: string;
+}
+
 interface UseChunkTranscriptionOptions {
   backendUrl: string;
   apiKey: string;
@@ -24,6 +33,7 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
   const abortControllerRef = useRef<AbortController>();
   const onTranscriptRef = useRef(onTranscript);
   const [status, setStatus] = useState<TranscriptionStatus>("idle");
+  const [diagnostics, setDiagnostics] = useState<TranscriptionDiagnostics>();
 
   useEffect(() => {
     onTranscriptRef.current = onTranscript;
@@ -51,6 +61,15 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
 
     const trimmedApiKey = apiKey.trim();
     if (!trimmedApiKey) {
+      if (import.meta.env.DEV) {
+        setDiagnostics({
+          chunkSize: chunk.size,
+          chunkMimeType: chunk.type || "unknown",
+          apiKeyPresent: false,
+          requestStartedAt: new Date().toISOString(),
+          error: "API key is missing before upload."
+        });
+      }
       setStatus("missing_api_key");
       return;
     }
@@ -60,6 +79,14 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
     abortControllerRef.current = controller;
     inFlightRef.current = true;
     setStatus("transcribing");
+    if (import.meta.env.DEV) {
+      setDiagnostics({
+        chunkSize: chunk.size,
+        chunkMimeType: chunk.type || "unknown",
+        apiKeyPresent: true,
+        requestStartedAt: new Date().toISOString()
+      });
+    }
 
     try {
       const formData = new FormData();
@@ -75,7 +102,23 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
       const responseBody = await response.text();
       const data = parseTranscriptionResponse(responseBody);
 
+      if (import.meta.env.DEV) {
+        setDiagnostics((current) => current ? {
+          ...current,
+          responseStatus: response.status,
+          error: response.ok ? undefined : sanitizeDiagnosticMessage(data.error)
+        } : current);
+      }
+
       if (!response.ok) {
+        if (isMissingApiKeyResponse(response.status, data.error)) {
+          logTranscriptionFailure(response.status, data.error, trimmedApiKey.length > 0, chunk);
+          if (session === sessionRef.current && activeRef.current) {
+            setStatus("missing_api_key");
+          }
+          return;
+        }
+
         throw new TranscriptionRequestError(
           response.status,
           data.error || `Speech transcription failed with status ${response.status}.`
@@ -97,7 +140,16 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
       }
 
       if (session === sessionRef.current && activeRef.current) {
-        logTranscriptionError(error, trimmedApiKey, chunk);
+        logTranscriptionError(error, trimmedApiKey.length > 0, chunk);
+        if (import.meta.env.DEV) {
+          setDiagnostics((current) => current ? {
+            ...current,
+            responseStatus: error instanceof TranscriptionRequestError ? error.responseStatus : current.responseStatus,
+            error: error instanceof TranscriptionRequestError
+              ? sanitizeDiagnosticMessage(error.message)
+              : "Network error while contacting the transcription backend."
+          } : current);
+        }
         setStatus("error");
       }
     } finally {
@@ -110,7 +162,7 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
 
   useEffect(() => stopSession, [stopSession]);
 
-  return { status, startSession, stopSession, transcribeChunk };
+  return { status, diagnostics, startSession, stopSession, transcribeChunk };
 }
 
 function getChunkFilename(mimeType: string): string {
@@ -134,21 +186,49 @@ function parseTranscriptionResponse(responseBody: string): { text?: string; erro
   }
 }
 
-function logTranscriptionError(error: unknown, apiKey: string, chunk: Blob) {
+function isMissingApiKeyResponse(status: number, message: string | undefined): boolean {
+  return status === 400 && message === "Field 'apiKey' is required.";
+}
+
+function sanitizeDiagnosticMessage(message: string | undefined): string | undefined {
+  if (!message) {
+    return undefined;
+  }
+
+  return message.replace(/sk-[a-zA-Z0-9_-]+/g, "[redacted]").slice(0, 240);
+}
+
+function logTranscriptionError(error: unknown, apiKeyPresent: boolean, chunk: Blob) {
   if (!import.meta.env.DEV) {
     return;
   }
 
   const rawMessage = error instanceof Error ? error.message : "Unknown transcription error";
-  const message = rawMessage
-    .replaceAll(apiKey, "[redacted]")
-    .replace(/sk-[a-zA-Z0-9_-]+/g, "[redacted]")
-    .slice(0, 240);
+  logTranscriptionFailure(
+    error instanceof TranscriptionRequestError ? error.responseStatus : "unavailable",
+    rawMessage,
+    apiKeyPresent,
+    chunk
+  );
+}
 
-  console.warn("Microphone transcription failed", {
-    responseStatus: error instanceof TranscriptionRequestError ? error.responseStatus : "unavailable",
-    backendError: message,
+function logTranscriptionFailure(
+  responseStatus: number | "unavailable",
+  backendError: string | undefined,
+  apiKeyPresent: boolean,
+  chunk: Blob
+) {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+
+  const sanitizedMessage = sanitizeDiagnosticMessage(backendError) || "Unknown transcription error";
+
+  console.log("Microphone transcription failed", {
+    responseStatus,
+    backendError: sanitizedMessage,
     chunkSize: chunk.size,
-    chunkType: chunk.type || "unknown"
+    chunkType: chunk.type || "unknown",
+    apiKeyPresent
   });
 }

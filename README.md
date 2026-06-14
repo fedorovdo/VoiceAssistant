@@ -106,6 +106,16 @@ The matcher returns only the top one or two practical cards so command answers r
 
 Common practical commands and troubleshooting questions work fully offline without an API key. This remains a curated TypeScript catalog rather than full book, document, or semantic search, and it is not yet a database or user-editable knowledge base.
 
+## Answer Source Modes
+
+The **Answer source** setting controls how Manual Ask and Live Assist produce explanations:
+
+- **Local knowledge only** searches the bundled cards and never calls GPT. It works fully offline without an API key; Live Assist quietly skips suitable fragments that have no local match.
+- **Local knowledge + GPT** is the default. It shows a fast local answer when available, then may enrich interview or learning answers with GPT. With no local match, GPT is used when an API key is configured.
+- **GPT only** skips local knowledge and sends suitable requests directly to GPT. This mode requires an API key.
+
+The selected mode is stored locally with the other desktop settings. Existing installations default to **Local knowledge + GPT** to preserve the previous behavior.
+
 ## Mock STT
 
 Mock STT is a simulation for development. Demo fragments appear only after **Start** is clicked. **Stop** pauses the simulation and **Clear** removes accumulated demo fragments and resets Live Assist duplicate tracking.

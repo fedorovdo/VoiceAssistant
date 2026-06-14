@@ -709,6 +709,35 @@ label {
   font-weight: 600;
 }
 
+.stt-diagnostics {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgb(29 29 31 / 8%);
+  border-radius: 7px;
+  color: #5f5f65;
+  background: #ffffff;
+}
+
+.stt-diagnostics > strong {
+  color: #3a3a3f;
+  font-size: 11px;
+}
+
+.stt-diagnostics-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 10px;
+}
+
+.stt-diagnostics-grid code {
+  overflow-wrap: anywhere;
+  color: #343438;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  white-space: normal;
+}
+
 .settings-field {
   display: grid;
   gap: 8px;

@@ -1,3 +1,5 @@
+import type { AnswerSourceMode } from "./answerSource.js";
+
 export type AnswerMode = "short" | "interview" | "learning";
 
 export type AppLanguage = "ru" | "en";
@@ -7,6 +9,8 @@ export type WorkMode = "manual" | "live";
 export type LayoutMode = "vertical" | "horizontal";
 
 export type SpeechToTextProviderId = "disabled" | "mock" | "microphone";
+
+export type { AnswerSourceMode } from "./answerSource.js";
 
 export interface AssistantAnswerRequest {
   text: string;
@@ -28,6 +32,7 @@ export interface DesktopSettings {
   answerLanguage: AppLanguage;
   audioInputDeviceId: string;
   answerMode: AnswerMode;
+  answerSourceMode: AnswerSourceMode;
   workMode: WorkMode;
   layoutMode: LayoutMode;
   speechToTextProvider: SpeechToTextProviderId;
@@ -36,3 +41,5 @@ export interface DesktopSettings {
 export * from "./liveAssist.js";
 export * from "./knowledgeCards.js";
 export * from "./transcriptSanitizer.js";
+export * from "./answerSource.js";
+export * from "./desktopSettings.js";
