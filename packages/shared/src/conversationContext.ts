@@ -39,9 +39,11 @@ export type LiveContextDecisionReason =
 export interface LiveContextDecision extends ConversationContextSnapshot {
   aggregatedText: string;
   normalizedText: string;
+  classification: FragmentClassification;
   shouldAnswer: boolean;
   shouldWait: boolean;
   reason: LiveContextDecisionReason;
+  cooldownRemainingMs: number;
 }
 
 export interface ConversationContextOptions {
@@ -92,12 +94,13 @@ const explanatoryIntentPatterns = [
 ];
 
 const commandIntentPatterns = [
-  /как (?:проверить|настроить|посмотреть|узнать|найти|запустить|остановить|перезапустить|сделать)/i,
+  /как (?:проверить|настроить|посмотреть|узнать|найти|запустить|остановить|перезапустить|сделать|собрать|пересобрать)/i,
   /(?:какая|какой|какую) команд[ауой]/i,
   /команда для/i,
   /команд(?:а|ы)\s+(?:для\s+)?[a-zа-я]/i,
   /помоги(?:те)?/i,
   /\bhow to\b/i,
+  /\b(?:build|rebuild)\b/i,
   /\bcommand (?:for|to)\b/i,
   /\bhelp (?:with|me)\b/i
 ];
@@ -127,7 +130,7 @@ export class ConversationContextBuffer {
   private readonly topicCooldownMs: number;
   private fragments: ConversationFragment[] = [];
   private answeredFragments = new Map<string, number>();
-  private lastTopicAnswers = new Map<TechnicalTopic, number>();
+  private lastTopicAnswers = new Map<TechnicalTopic, { timestamp: number; normalizedText: string }>();
 
   constructor(options: ConversationContextOptions = {}) {
     this.maxAgeMs = options.maxAgeMs ?? 90_000;
@@ -151,33 +154,36 @@ export class ConversationContextBuffer {
     const snapshot = this.getSnapshot(timestamp);
     const aggregatedText = aggregateConversationFragments(this.fragments, snapshot.currentTopic);
     const normalizedText = normalizeContextText(aggregatedText);
+    const aggregatedClassification = classifyTechnicalFragment(aggregatedText).classification;
 
     if (isLikelyIncompleteConversationFragment(cleanedText)) {
-      return decision(snapshot, aggregatedText, normalizedText, false, true, "incomplete");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, false, true, "incomplete");
     }
 
     if (ignoredConversationPatterns.some((pattern) => pattern.test(normalizedText))) {
-      return decision(snapshot, aggregatedText, normalizedText, false, false, "ignored");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, false, false, "ignored");
     }
 
-    const aggregatedClassification = classifyTechnicalFragment(aggregatedText).classification;
     const hasIntent = hasAnswerIntent(aggregatedText);
     const shouldAnswer = aggregatedClassification === "explicit_question"
       || (snapshot.currentTopic !== null && hasIntent);
 
     if (!shouldAnswer) {
-      return decision(snapshot, aggregatedText, normalizedText, false, false, "ignored");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, false, false, "ignored");
     }
 
     if (this.answeredFragments.has(normalizedText)) {
-      return decision(snapshot, aggregatedText, normalizedText, false, false, "duplicate");
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, false, false, "duplicate");
     }
 
-    if (snapshot.currentTopic && this.isTopicCoolingDown(snapshot.currentTopic, timestamp)) {
-      return decision(snapshot, aggregatedText, normalizedText, false, false, "topic_cooldown");
+    const cooldownRemainingMs = snapshot.currentTopic
+      ? this.getTopicCooldownRemaining(snapshot.currentTopic, normalizedText, timestamp)
+      : 0;
+    if (cooldownRemainingMs > 0) {
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, false, false, "topic_cooldown", cooldownRemainingMs);
     }
 
-    return decision(snapshot, aggregatedText, normalizedText, true, false, "answer");
+    return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, true, false, "answer");
   }
 
   markAnswered(result: Pick<LiveContextDecision, "normalizedText" | "currentTopic">, timestamp = Date.now()) {
@@ -185,7 +191,10 @@ export class ConversationContextBuffer {
       this.answeredFragments.set(result.normalizedText, timestamp);
     }
     if (result.currentTopic) {
-      this.lastTopicAnswers.set(result.currentTopic, timestamp);
+      this.lastTopicAnswers.set(result.currentTopic, {
+        timestamp,
+        normalizedText: result.normalizedText
+      });
     }
   }
 
@@ -204,9 +213,16 @@ export class ConversationContextBuffer {
     this.lastTopicAnswers.clear();
   }
 
-  private isTopicCoolingDown(topic: TechnicalTopic, timestamp: number): boolean {
-    const lastAnswerAt = this.lastTopicAnswers.get(topic);
-    return lastAnswerAt !== undefined && timestamp - lastAnswerAt < this.topicCooldownMs;
+  private getTopicCooldownRemaining(topic: TechnicalTopic, normalizedText: string, timestamp: number): number {
+    const lastAnswer = this.lastTopicAnswers.get(topic);
+    if (!lastAnswer) return 0;
+
+    const elapsed = timestamp - lastAnswer.timestamp;
+    if (elapsed >= this.topicCooldownMs || textSimilarity(lastAnswer.normalizedText, normalizedText) < 0.72) {
+      return 0;
+    }
+
+    return this.topicCooldownMs - elapsed;
   }
 
   private prune(timestamp: number) {
@@ -263,6 +279,7 @@ export function aggregateConversationFragments(
   const selected = recent.filter((fragment, index) => {
     if (index === recent.length - 1) return true;
     if (isLikelyIncompleteConversationFragment(fragment.text)) return true;
+    if (hasAnswerIntent(fragment.text)) return false;
     if (currentTopic && fragment.topic === currentTopic) return true;
     return newest.topic === null && currentTopic !== null && fragment.topic === currentTopic;
   });
@@ -308,11 +325,13 @@ function decision(
   snapshot: ConversationContextSnapshot,
   aggregatedText: string,
   normalizedText: string,
+  classification: FragmentClassification,
   shouldAnswer: boolean,
   shouldWait: boolean,
-  reason: LiveContextDecisionReason
+  reason: LiveContextDecisionReason,
+  cooldownRemainingMs = 0
 ): LiveContextDecision {
-  return { ...snapshot, aggregatedText, normalizedText, shouldAnswer, shouldWait, reason };
+  return { ...snapshot, aggregatedText, normalizedText, classification, shouldAnswer, shouldWait, reason, cooldownRemainingMs };
 }
 
 function addSentencePunctuation(text: string, question: boolean): string {
@@ -332,4 +351,25 @@ function normalizeContextText(text: string): string {
 function containsTerm(text: string, term: string): boolean {
   const escaped = normalizeContextText(term).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(^|[^a-zа-я0-9])${escaped}($|[^a-zа-я0-9])`, "i").test(text);
+}
+
+function textSimilarity(left: string, right: string): number {
+  const leftTokens = similarityTokens(left);
+  const rightTokens = similarityTokens(right);
+  if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
+
+  let intersection = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) intersection += 1;
+  }
+  return intersection / new Set([...leftTokens, ...rightTokens]).size;
+}
+
+function similarityTokens(text: string): Set<string> {
+  return new Set(
+    normalizeContextText(text)
+      .replace(/[?!.,;:]+/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+  );
 }

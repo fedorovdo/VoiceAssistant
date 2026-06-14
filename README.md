@@ -94,7 +94,9 @@ Live Assist remains conservative: it classifies each completed Mock STT or micro
 
 Live answers are designed for mixed audiences and stay concise. Learning mode may provide a longer explanation.
 
-Live Assist also keeps a lightweight in-memory context of up to ten recent accepted fragments for roughly 90 seconds. It detects the current broad technical topic, may combine a topic-setting phrase with the next question, and can wait briefly when a phrase appears incomplete. Local knowledge and GPT receive the same compact aggregated fragment, while per-topic cooldowns reduce repeated answers during an ongoing discussion.
+Live Assist also keeps a lightweight in-memory context of up to ten recent accepted fragments for roughly 90 seconds. It detects the current broad technical topic, may combine a topic-setting phrase with the next question, and can wait briefly when a phrase appears incomplete. Local knowledge checks the newest fragment first and then the compact aggregate, while GPT receives the aggregate. Cooldown blocks exact and near-duplicate questions without suppressing a clearly different follow-up on the same topic.
+
+Development builds include a compact Live Assist decision panel. It shows the accepted raw and normalized fragment, aggregate, topic, classification, answer-source mode, final decision, reason, and remaining cooldown. It contains no API keys, raw audio, or persisted conversation data and is intended for tuning automatic-answer behavior.
 
 Conversation context exists only in renderer memory. It is cleared by the **Clear** action and is never written to disk or added to the microphone upload.
 

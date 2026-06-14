@@ -45,3 +45,4 @@ export * from "./answerSource.js";
 export * from "./desktopSettings.js";
 export * from "./conversationContext.js";
 export * from "./technicalTermNormalizer.js";
+export * from "./liveAssistDecision.js";

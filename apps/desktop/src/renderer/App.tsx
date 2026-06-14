@@ -8,6 +8,9 @@ import type {
   DesktopSettings,
   KnowledgeCard,
   LayoutMode,
+  LiveAssistAction,
+  LiveContextDecision,
+  FragmentClassification,
   SanitizedTranscript,
   SpeechToTextProviderId,
   TechnicalTopic,
@@ -15,9 +18,11 @@ import type {
 } from "@voiceassistant/shared";
 import {
   ConversationContextBuffer,
+  findLiveKnowledgeCards,
   findKnowledgeCards,
   migrateDesktopSettings,
   normalizeTechnicalTerms,
+  resolveLiveAssistDecision,
   resolveAnswerSource,
   sanitizeTranscript,
   shouldSearchLocalKnowledge
@@ -60,6 +65,18 @@ type LiveFragmentSource = "mock" | "microphone";
 type AnswerSource = "local" | "gpt" | undefined;
 type SttCleanupStatus = "idle" | "accepted" | "skipped" | "waiting";
 
+interface LiveDecisionDiagnostics {
+  rawFragment: string;
+  normalizedFragment: string;
+  aggregatedFragment: string;
+  topic: TechnicalTopic | null;
+  classification: FragmentClassification;
+  answerSourceMode: AnswerSourceMode;
+  decision: LiveAssistAction;
+  reason: string;
+  cooldownRemainingMs: number;
+}
+
 export function App() {
   const [settings, setSettings] = useState<DesktopSettings>(loadSettings);
   const [splitterRatio, setSplitterRatio] = useState(loadSplitterRatio);
@@ -79,6 +96,7 @@ export function App() {
   const [error, setError] = useState("");
   const [recognitionMessage, setRecognitionMessage] = useState("");
   const [normalizedTerms, setNormalizedTerms] = useState<string[]>([]);
+  const [liveDecisionDiagnostics, setLiveDecisionDiagnostics] = useState<LiveDecisionDiagnostics>();
   const [sttCleanupStatus, setSttCleanupStatus] = useState<SttCleanupStatus>("idle");
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
   const [isRefreshingDevices, setIsRefreshingDevices] = useState(false);
@@ -89,7 +107,7 @@ export function App() {
     currentTopic: null,
     fragmentCount: 0
   });
-  const liveFragmentHandlerRef = useRef<(fragment: string, source: LiveFragmentSource) => void>(() => undefined);
+  const liveFragmentHandlerRef = useRef<(fragment: string, source: LiveFragmentSource, rawFragment: string) => void>(() => undefined);
   const conversationContextRef = useRef(new ConversationContextBuffer());
   const pendingMicrophoneFragmentsRef = useRef<string[]>([]);
   const lastAcceptedTranscriptRef = useRef("");
@@ -142,7 +160,7 @@ export function App() {
     setRecognizedText((currentText) => appendRecognizedText(currentText, acceptedText));
     setSttCleanupStatus("accepted");
     setRecognitionMessage("");
-    liveFragmentHandlerRef.current(acceptedText, source);
+    liveFragmentHandlerRef.current(acceptedText, source, candidate.text);
   }, [settings.answerLanguage, t]);
   const handleTranscript = useCallback((text: string) => {
     processRecognizedFragment(text, "microphone");
@@ -276,10 +294,11 @@ export function App() {
     }
   }, [settings.answerLanguage, settings.answerMode, settings.apiKey, settings.model, t]);
 
-  const queueLiveAnswer = useCallback((fragment: string, source: LiveFragmentSource) => {
+  const queueLiveAnswer = useCallback((fragment: string, source: LiveFragmentSource, rawFragment = fragment) => {
     if (settings.workMode !== "live") {
       return;
     }
+    void source;
 
     const contextDecision = conversationContextRef.current.add(fragment);
     setLiveContextStatus({
@@ -287,32 +306,67 @@ export function App() {
       fragmentCount: contextDecision.fragments.length
     });
 
-    if (contextDecision.shouldWait) {
-      setRecognitionMessage(t("liveWaitingPhrase"));
+    const knowledgeMatches = contextDecision.shouldAnswer && shouldSearchLocalKnowledge(settings.answerSourceMode)
+      ? findLiveKnowledgeCards(fragment, contextDecision.aggregatedText)
+      : [];
+    const policyDecision = resolveLiveAssistDecision({
+      contextDecision,
+      answerSourceMode: settings.answerSourceMode,
+      hasLocalMatch: knowledgeMatches.length > 0,
+      hasApiKey: settings.apiKey.trim().length > 0,
+      answerMode: settings.answerMode
+    });
+
+    setLiveDecisionDiagnostics(createLiveDecisionDiagnostics(
+      rawFragment,
+      fragment,
+      contextDecision,
+      settings.answerSourceMode,
+      policyDecision.action,
+      policyDecision.reason
+    ));
+
+    if (policyDecision.action === "wait") {
+      setRecognitionMessage(t("liveStatusWaiting"));
       return;
     }
-
-    if (!contextDecision.shouldAnswer) {
-      if (source === "microphone" && contextDecision.reason === "ignored") {
-        setRecognitionMessage(t("liveFragmentIgnored"));
-      } else {
-        setRecognitionMessage("");
-      }
+    if (policyDecision.action === "duplicate") {
+      setRecognitionMessage(t("liveStatusDuplicate"));
+      return;
+    }
+    if (policyDecision.action === "cooldown") {
+      setRecognitionMessage(t("liveStatusCooldown"));
+      return;
+    }
+    if (policyDecision.action === "ignore") {
+      setRecognitionMessage(t("liveFragmentIgnored"));
+      return;
+    }
+    if (policyDecision.action === "no_local_match") {
+      setRecognitionMessage(t("liveStatusNoLocalMatch"));
+      return;
+    }
+    if (policyDecision.action === "missing_api_key") {
+      setRecognitionMessage(t("liveStatusMissingApiKey"));
       return;
     }
 
     if (answeredFragmentsRef.current.has(contextDecision.normalizedText)) {
+      setLiveDecisionDiagnostics(createLiveDecisionDiagnostics(
+        rawFragment,
+        fragment,
+        contextDecision,
+        settings.answerSourceMode,
+        "duplicate",
+        "pending_or_answered_duplicate"
+      ));
+      setRecognitionMessage(t("liveStatusDuplicate"));
       return;
     }
 
     const answerText = contextDecision.aggregatedText;
-    const knowledgeMatches = shouldSearchLocalKnowledge(settings.answerSourceMode)
-      ? findKnowledgeCards(answerText)
-      : [];
-
-    if (source === "microphone") {
-      setRecognitionMessage(t("livePreparingAnswer"));
-    }
+    const resolution = policyDecision.sourceResolution;
+    setRecognitionMessage(t("liveStatusPreparing"));
 
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
@@ -320,14 +374,9 @@ export function App() {
 
     const throttleDelay = Math.max(0, liveThrottleMs - (Date.now() - lastLiveAnswerAtRef.current));
     liveTimerRef.current = window.setTimeout(async () => {
+      liveTimerRef.current = undefined;
+      if (!resolution) return;
       lastLiveAnswerAtRef.current = Date.now();
-
-      const resolution = resolveAnswerSource({
-        mode: settings.answerSourceMode,
-        hasLocalMatch: knowledgeMatches.length > 0,
-        hasApiKey: settings.apiKey.trim().length > 0,
-        answerMode: settings.answerMode
-      });
 
       if (resolution === "local" || resolution === "local-and-gpt") {
         showLocalAnswer(knowledgeMatches);
@@ -336,36 +385,18 @@ export function App() {
       }
 
       if (resolution === "local") {
-        if (source === "microphone") setRecognitionMessage("");
-        return;
-      }
-
-      if (resolution === "local-not-found") {
-        if (source === "microphone") setRecognitionMessage(t("localKnowledgeNotFound"));
-        return;
-      }
-
-      if (resolution === "gpt-key-required") {
-        if (source === "microphone") setRecognitionMessage(t("gptModeRequiresApiKey"));
-        return;
-      }
-
-      if (resolution === "hybrid-key-required") {
-        setError(t("localKnowledgeMissApiKey"));
-        if (source === "microphone") setRecognitionMessage("");
+        setRecognitionMessage("");
         return;
       }
 
       const sent = await requestAnswer(answerText, "live", resolution === "local-and-gpt");
-      if (!sent) {
+      if (!sent && resolution === "gpt") {
         answeredFragmentsRef.current.delete(contextDecision.normalizedText);
       } else if (resolution === "gpt") {
         conversationContextRef.current.markAnswered(contextDecision);
         answeredFragmentsRef.current.add(contextDecision.normalizedText);
       }
-      if (source === "microphone") {
-        setRecognitionMessage("");
-      }
+      setRecognitionMessage("");
     }, Math.max(liveDebounceMs, throttleDelay));
   }, [requestAnswer, settings.answerMode, settings.answerSourceMode, settings.apiKey, settings.workMode, showLocalAnswer, t]);
 
@@ -433,9 +464,11 @@ export function App() {
     pendingMicrophoneFragmentsRef.current = [];
     lastAcceptedTranscriptRef.current = "";
     setNormalizedTerms([]);
+    setLiveDecisionDiagnostics(undefined);
     answeredFragmentsRef.current.clear();
     conversationContextRef.current.clear();
     setLiveContextStatus({ currentTopic: null, fragmentCount: 0 });
+    lastLiveAnswerAtRef.current = 0;
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
       liveTimerRef.current = undefined;
@@ -603,6 +636,22 @@ export function App() {
           </div>
           <textarea value={recognizedText} onChange={(event) => setRecognizedText(event.target.value)} placeholder={t("recognizedPlaceholder")} />
           {recognitionMessage ? <div className="recognition-message">{recognitionMessage}</div> : null}
+          {import.meta.env.DEV && settings.workMode === "live" && liveDecisionDiagnostics ? (
+            <div className="stt-diagnostics live-decision-diagnostics">
+              <strong>Диагностика Live Assist</strong>
+              <div className="stt-diagnostics-grid">
+                <span>сырой фрагмент</span><code>{liveDecisionDiagnostics.rawFragment || "—"}</code>
+                <span>нормализованный</span><code>{liveDecisionDiagnostics.normalizedFragment || "—"}</code>
+                <span>агрегированный</span><code>{liveDecisionDiagnostics.aggregatedFragment || "—"}</code>
+                <span>тема</span><code>{liveDecisionDiagnostics.topic ?? "—"}</code>
+                <span>классификация</span><code>{liveDecisionDiagnostics.classification}</code>
+                <span>источник ответа</span><code>{liveDecisionDiagnostics.answerSourceMode}</code>
+                <span>решение</span><code>{liveDecisionDiagnostics.decision}</code>
+                <span>причина</span><code>{liveDecisionDiagnostics.reason}</code>
+                <span>осталось паузы</span><code>{formatCooldown(liveDecisionDiagnostics.cooldownRemainingMs)}</code>
+              </div>
+            </div>
+          ) : null}
           {settings.speechToTextProvider === "microphone" ? (
             <div className="recorder-debug">
               <div className="recorder-debug-header">
@@ -743,6 +792,31 @@ export function App() {
       ) : null}
     </main>
   );
+}
+
+function createLiveDecisionDiagnostics(
+  rawFragment: string,
+  normalizedFragment: string,
+  contextDecision: LiveContextDecision,
+  answerSourceMode: AnswerSourceMode,
+  decision: LiveAssistAction,
+  reason: string
+): LiveDecisionDiagnostics {
+  return {
+    rawFragment,
+    normalizedFragment,
+    aggregatedFragment: contextDecision.aggregatedText,
+    topic: contextDecision.currentTopic,
+    classification: contextDecision.classification,
+    answerSourceMode,
+    decision,
+    reason,
+    cooldownRemainingMs: contextDecision.cooldownRemainingMs
+  };
+}
+
+function formatCooldown(cooldownRemainingMs: number): string {
+  return cooldownRemainingMs > 0 ? `${(cooldownRemainingMs / 1000).toFixed(1)} с` : "0 с";
 }
 
 function loadSettings(): DesktopSettings {

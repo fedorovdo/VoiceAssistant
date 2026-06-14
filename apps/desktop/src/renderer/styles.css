@@ -750,6 +750,16 @@ label {
   white-space: normal;
 }
 
+.live-decision-diagnostics {
+  margin: 0 16px 10px;
+  background: #f8faf9;
+}
+
+.live-decision-diagnostics .stt-diagnostics-grid {
+  max-height: 150px;
+  overflow: auto;
+}
+
 .settings-field {
   display: grid;
   gap: 8px;
