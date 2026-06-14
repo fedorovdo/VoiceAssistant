@@ -43,3 +43,4 @@ export * from "./knowledgeCards.js";
 export * from "./transcriptSanitizer.js";
 export * from "./answerSource.js";
 export * from "./desktopSettings.js";
+export * from "./conversationContext.js";

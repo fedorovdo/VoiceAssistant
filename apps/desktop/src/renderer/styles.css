@@ -240,6 +240,12 @@ button {
   background: #faecea;
 }
 
+.live-context-note {
+  color: #64646a;
+  font-size: 11px;
+  font-weight: 550;
+}
+
 .status-note {
   color: #74747a;
   font-size: 11px;

@@ -94,6 +94,10 @@ Live Assist remains conservative: it classifies each completed Mock STT or micro
 
 Live answers are designed for mixed audiences and stay concise. Learning mode may provide a longer explanation.
 
+Live Assist also keeps a lightweight in-memory context of up to ten recent accepted fragments for roughly 90 seconds. It detects the current broad technical topic, may combine a topic-setting phrase with the next question, and can wait briefly when a phrase appears incomplete. Local knowledge and GPT receive the same compact aggregated fragment, while per-topic cooldowns reduce repeated answers during an ongoing discussion.
+
+Conversation context exists only in renderer memory. It is cleared by the **Clear** action and is never written to disk or added to the microphone upload.
+
 ## Local Knowledge Cards
 
 VoiceAssistant includes an expanded in-memory practical command reference for Linux troubleshooting, Docker and Docker Compose, Kubernetes, networking, Windows and Active Directory, Proxmox, and Git. It covers service and log diagnostics, filesystems and permissions, containers and images, kubectl troubleshooting, port and DNS checks, Group Policy and AD replication, virtualization storage, backups, and everyday version-control commands. Cards contain concise Russian explanations, practical bullets, commands, Russian and English aliases, and related terms.

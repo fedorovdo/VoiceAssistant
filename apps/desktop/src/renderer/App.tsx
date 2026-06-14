@@ -10,10 +10,11 @@ import type {
   LayoutMode,
   SanitizedTranscript,
   SpeechToTextProviderId,
+  TechnicalTopic,
   WorkMode
 } from "@voiceassistant/shared";
 import {
-  classifyTechnicalFragment,
+  ConversationContextBuffer,
   findKnowledgeCards,
   migrateDesktopSettings,
   resolveAnswerSource,
@@ -82,7 +83,12 @@ export function App() {
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>("permission_hint");
   const [permissionState, setPermissionState] = useState<PermissionState>("idle");
   const [permissionMessage, setPermissionMessage] = useState<PermissionMessage>();
+  const [liveContextStatus, setLiveContextStatus] = useState<{ currentTopic: TechnicalTopic | null; fragmentCount: number }>({
+    currentTopic: null,
+    fragmentCount: 0
+  });
   const liveFragmentHandlerRef = useRef<(fragment: string, source: LiveFragmentSource) => void>(() => undefined);
+  const conversationContextRef = useRef(new ConversationContextBuffer());
   const pendingMicrophoneFragmentsRef = useRef<string[]>([]);
   const lastAcceptedTranscriptRef = useRef("");
   const processRecognizedFragment = useCallback((rawText: string, source: LiveFragmentSource) => {
@@ -270,20 +276,33 @@ export function App() {
       return;
     }
 
-    const detection = classifyTechnicalFragment(fragment);
-    if (detection.classification === "ignore") {
-      if (source === "microphone") {
+    const contextDecision = conversationContextRef.current.add(fragment);
+    setLiveContextStatus({
+      currentTopic: contextDecision.currentTopic,
+      fragmentCount: contextDecision.fragments.length
+    });
+
+    if (contextDecision.shouldWait) {
+      setRecognitionMessage(t("liveWaitingPhrase"));
+      return;
+    }
+
+    if (!contextDecision.shouldAnswer) {
+      if (source === "microphone" && contextDecision.reason === "ignored") {
         setRecognitionMessage(t("liveFragmentIgnored"));
+      } else {
+        setRecognitionMessage("");
       }
       return;
     }
 
-    if (answeredFragmentsRef.current.has(detection.normalizedText)) {
+    if (answeredFragmentsRef.current.has(contextDecision.normalizedText)) {
       return;
     }
 
+    const answerText = contextDecision.aggregatedText;
     const knowledgeMatches = shouldSearchLocalKnowledge(settings.answerSourceMode)
-      ? findKnowledgeCards(fragment)
+      ? findKnowledgeCards(answerText)
       : [];
 
     if (source === "microphone") {
@@ -296,7 +315,6 @@ export function App() {
 
     const throttleDelay = Math.max(0, liveThrottleMs - (Date.now() - lastLiveAnswerAtRef.current));
     liveTimerRef.current = window.setTimeout(async () => {
-      answeredFragmentsRef.current.add(detection.normalizedText);
       lastLiveAnswerAtRef.current = Date.now();
 
       const resolution = resolveAnswerSource({
@@ -308,6 +326,8 @@ export function App() {
 
       if (resolution === "local" || resolution === "local-and-gpt") {
         showLocalAnswer(knowledgeMatches);
+        conversationContextRef.current.markAnswered(contextDecision);
+        answeredFragmentsRef.current.add(contextDecision.normalizedText);
       }
 
       if (resolution === "local") {
@@ -331,9 +351,12 @@ export function App() {
         return;
       }
 
-      const sent = await requestAnswer(fragment, "live", resolution === "local-and-gpt");
+      const sent = await requestAnswer(answerText, "live", resolution === "local-and-gpt");
       if (!sent) {
-        answeredFragmentsRef.current.delete(detection.normalizedText);
+        answeredFragmentsRef.current.delete(contextDecision.normalizedText);
+      } else if (resolution === "gpt") {
+        conversationContextRef.current.markAnswered(contextDecision);
+        answeredFragmentsRef.current.add(contextDecision.normalizedText);
       }
       if (source === "microphone") {
         setRecognitionMessage("");
@@ -354,6 +377,8 @@ export function App() {
     setSttCleanupStatus("idle");
     pendingMicrophoneFragmentsRef.current = [];
     lastAcceptedTranscriptRef.current = "";
+    conversationContextRef.current.clear();
+    setLiveContextStatus({ currentTopic: null, fragmentCount: 0 });
   }, [settings.answerLanguage, settings.speechToTextProvider, speechToTextProvider, microphoneRecorder.stop, chunkTranscription.stopSession]);
   useEffect(() => () => {
     if (liveTimerRef.current !== undefined) {
@@ -402,6 +427,8 @@ export function App() {
     pendingMicrophoneFragmentsRef.current = [];
     lastAcceptedTranscriptRef.current = "";
     answeredFragmentsRef.current.clear();
+    conversationContextRef.current.clear();
+    setLiveContextStatus({ currentTopic: null, fragmentCount: 0 });
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
       liveTimerRef.current = undefined;
@@ -514,6 +541,18 @@ export function App() {
         {settings.speechToTextProvider === "mock" ? <span className="mode-badge simulated-badge">{t("mockStt")} · {t("simulatedMode")}</span> : null}
         {settings.speechToTextProvider === "microphone" ? <span className="mode-badge recording-badge">{t("microphoneCapture")}</span> : null}
         {settings.answerSourceMode === "local-only" ? <span className="mode-badge">{t("localOnlyModeStatus")}</span> : null}
+        {settings.workMode === "live" ? (
+          <>
+            <span className="status-note live-context-note">
+              {liveContextStatus.currentTopic
+                ? `${t("topicLabel")}: ${getTopicDisplayName(liveContextStatus.currentTopic, settings.interfaceLanguage)}`
+                : t("noTopicDetected")}
+            </span>
+            <span className="status-note live-context-note">
+              {formatContextFragmentCount(liveContextStatus.fragmentCount, settings.interfaceLanguage, t)}
+            </span>
+          </>
+        ) : null}
         <span className="status-note">{settings.speechToTextProvider === "microphone" ? t("experimentalStt") : t("microphoneSttAvailable")}</span>
       </div>
 
@@ -795,6 +834,32 @@ function getSttCleanupStatusText(
 function formatDiagnosticTimestamp(timestamp: string): string {
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? timestamp : date.toLocaleTimeString("ru-RU");
+}
+
+function getTopicDisplayName(topic: TechnicalTopic, language: AppLanguage): string {
+  if (language === "ru" && topic === "Networking") return "Сети";
+  return topic;
+}
+
+function formatContextFragmentCount(
+  count: number,
+  language: AppLanguage,
+  t: ReturnType<typeof createTranslator>
+): string {
+  if (language === "en") {
+    return `${t("contextLabel")}: ${count} ${count === 1 ? t("contextFragmentOne") : t("contextFragmentMany")}`;
+  }
+
+  const remainder100 = count % 100;
+  const remainder10 = count % 10;
+  const word = remainder100 >= 11 && remainder100 <= 14
+    ? t("contextFragmentMany")
+    : remainder10 === 1
+      ? t("contextFragmentOne")
+      : remainder10 >= 2 && remainder10 <= 4
+        ? t("contextFragmentFew")
+        : t("contextFragmentMany");
+  return `${t("contextLabel")}: ${count} ${word}`;
 }
 
 function formatKnowledgeCards(cards: KnowledgeCard[], language: AppLanguage): string {
