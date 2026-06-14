@@ -72,10 +72,14 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
         body: formData,
         signal: controller.signal
       });
-      const data = await response.json() as { text?: string; error?: string };
+      const responseBody = await response.text();
+      const data = parseTranscriptionResponse(responseBody);
 
       if (!response.ok) {
-        throw new Error(data.error || "Speech transcription failed.");
+        throw new TranscriptionRequestError(
+          response.status,
+          data.error || `Speech transcription failed with status ${response.status}.`
+        );
       }
 
       if (session !== sessionRef.current || !activeRef.current) {
@@ -93,6 +97,7 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
       }
 
       if (session === sessionRef.current && activeRef.current) {
+        logTranscriptionError(error, trimmedApiKey, chunk);
         setStatus("error");
       }
     } finally {
@@ -112,4 +117,38 @@ function getChunkFilename(mimeType: string): string {
   if (mimeType.includes("ogg")) return "chunk.ogg";
   if (mimeType.includes("mp4")) return "chunk.mp4";
   return "chunk.webm";
+}
+
+class TranscriptionRequestError extends Error {
+  constructor(readonly responseStatus: number, message: string) {
+    super(message);
+    this.name = "TranscriptionRequestError";
+  }
+}
+
+function parseTranscriptionResponse(responseBody: string): { text?: string; error?: string } {
+  try {
+    return JSON.parse(responseBody) as { text?: string; error?: string };
+  } catch {
+    return {};
+  }
+}
+
+function logTranscriptionError(error: unknown, apiKey: string, chunk: Blob) {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+
+  const rawMessage = error instanceof Error ? error.message : "Unknown transcription error";
+  const message = rawMessage
+    .replaceAll(apiKey, "[redacted]")
+    .replace(/sk-[a-zA-Z0-9_-]+/g, "[redacted]")
+    .slice(0, 240);
+
+  console.warn("Microphone transcription failed", {
+    responseStatus: error instanceof TranscriptionRequestError ? error.responseStatus : "unavailable",
+    backendError: message,
+    chunkSize: chunk.size,
+    chunkType: chunk.type || "unknown"
+  });
 }

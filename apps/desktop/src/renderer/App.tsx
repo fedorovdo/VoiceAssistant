@@ -13,6 +13,7 @@ import type {
 } from "@voiceassistant/shared";
 import { classifyTechnicalFragment, findKnowledgeCards, sanitizeTranscript } from "@voiceassistant/shared";
 import { createTranslator } from "./i18n.js";
+import { MicrophoneLevelMeter } from "./MicrophoneLevelMeter.js";
 import { createSpeechToTextProvider } from "./speech/createSpeechToTextProvider.js";
 import type { RecognitionStatus } from "./speech/SpeechToTextProvider.js";
 import { useChunkTranscription } from "./speech/useChunkTranscription.js";
@@ -38,6 +39,7 @@ const splitterRatioStorageKey = "voiceassistant.splitterRatio";
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8787";
 const liveDebounceMs = 650;
 const liveThrottleMs = 2000;
+const enableMicrophoneVisualizer = false;
 
 type DeviceStatus = "permission_hint" | "unavailable" | "none" | "found" | "error";
 type PermissionState = "idle" | "requesting" | "success" | "error";
@@ -502,6 +504,14 @@ export function App() {
             <div className="recorder-debug">
               <div className="recorder-debug-header">
                 <span>{t("recordingDebug")}</span>
+                {enableMicrophoneVisualizer ? (
+                  <MicrophoneLevelMeter
+                    active={microphoneRecorder.status === "recording"}
+                    stream={microphoneRecorder.getMediaStream()}
+                    activeLabel={t("microphoneActive")}
+                    stoppedLabel={t("microphoneStopped")}
+                  />
+                ) : null}
                 <span>{t("audioPrivacyNote")}</span>
               </div>
               <div className="recorder-debug-values">

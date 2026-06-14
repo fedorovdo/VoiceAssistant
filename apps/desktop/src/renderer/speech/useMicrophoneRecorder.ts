@@ -65,6 +65,8 @@ export function useMicrophoneRecorder(options: UseMicrophoneRecorderOptions = {}
     setState((current) => ({ ...current, status: "stopped" }));
   }, []);
 
+  const getMediaStream = useCallback(() => streamRef.current ?? null, []);
+
   const start = useCallback(async (selectedDeviceId: string) => {
     stop();
     const session = sessionRef.current;
@@ -192,7 +194,7 @@ export function useMicrophoneRecorder(options: UseMicrophoneRecorderOptions = {}
 
   useEffect(() => stop, [stop]);
 
-  return { ...state, start, stop };
+  return { ...state, start, stop, getMediaStream };
 }
 
 function requestStream(deviceId: string): Promise<MediaStream> {
