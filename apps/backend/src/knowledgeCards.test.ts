@@ -90,3 +90,24 @@ test("findKnowledgeCards covers Kubernetes command overview and restart requests
   assert.equal(findKnowledgeCards("Какие основные команды вы знаете Kubernetes?")[0]?.id, "kubernetes-basic-commands");
   assert.equal(findKnowledgeCards("Как перезапустить Kubernetes?")[0]?.id, "kubectl-rollout-restart");
 });
+
+test("findKnowledgeCards covers Linux sudo, security, groups, firewall, and SSH", () => {
+  assert.equal(findKnowledgeCards("Как добавить пользователю права sudo?")[0]?.id, "linux-add-user-sudo");
+  assert.equal(findKnowledgeCards("Как дать sudo пользователю?")[0]?.id, "linux-add-user-sudo");
+  assert.equal(findKnowledgeCards("Как добавить пользователя в sudoers?")[0]?.id, "linux-sudoers-basics");
+  assert.equal(findKnowledgeCards("Чтобы не писать sudo")[0]?.id, "linux-sudo-basics");
+  assert.equal(findKnowledgeCards("Как проверить безопасность в Linux?")[0]?.id, "linux-security-quick-check");
+  assert.equal(findKnowledgeCards("Проверить firewall")[0]?.id, "linux-firewall-status");
+  assert.equal(findKnowledgeCards("В каких группах пользователь?")[0]?.id, "linux-user-groups");
+  assert.equal(findKnowledgeCards("id username")[0]?.id, "linux-user-groups");
+  assert.equal(findKnowledgeCards("groups username")[0]?.id, "linux-user-groups");
+  assert.equal(findKnowledgeCards("sshd status")[0]?.id, "linux-ssh-access");
+});
+
+test("findKnowledgeCards matches broad Linux permission questions conservatively", () => {
+  assert.equal(findKnowledgeCards("Как дать права в Linux?")[0]?.id, "linux-permissions-overview");
+  assert.equal(findKnowledgeCards("Как дать права в Линукс?")[0]?.id, "linux-permissions-overview");
+  assert.equal(findKnowledgeCards("как выдать права пользователю в linux")[0]?.id, "linux-permissions-overview");
+  assert.deepEqual(findKnowledgeCards("как дать подарок"), []);
+  assert.deepEqual(findKnowledgeCards("как дать совет"), []);
+});

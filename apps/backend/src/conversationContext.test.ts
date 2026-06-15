@@ -239,3 +239,45 @@ test("answered and cleared pending requests are not recovered", () => {
   assert.equal(afterAnswer.shouldAnswer, false);
   assert.equal(afterClear.shouldAnswer, false);
 });
+
+test("Live Assist answers rescued Linux security and sudo questions", () => {
+  const questions = [
+    "Как проверить безопасность в Linux?",
+    "Как добавить пользователю права sudo?",
+    "Как добавить права пользователю, чтобы не писать sudo?"
+  ];
+
+  for (const question of questions) {
+    for (const sensitivity of ["balanced", "active"] as const) {
+      const result = new ConversationContextBuffer().add(question, 1_000, sensitivity);
+      assert.equal(result.intent, "answer_request");
+      assert.equal(result.shouldAnswer, true);
+      if (question.includes("sudo")) {
+        assert.equal(result.intentRescue, true);
+        assert.equal(result.reason, "intent_rescue");
+      }
+    }
+  }
+});
+
+test("conservative sensitivity answers a strong rescued admin question", () => {
+  const result = new ConversationContextBuffer().add(
+    "Как добавить пользователю права sudo?",
+    1_000,
+    "conservative"
+  );
+
+  assert.equal(result.intent, "answer_request");
+  assert.equal(result.shouldAnswer, true);
+  assert.equal(result.intentRescue, true);
+  assert.equal(result.matchedTechnicalTerm, "sudo");
+});
+
+test("Live Assist still ignores lyrics and non-technical questions", () => {
+  for (const phrase of ["You're trying, you're crying now", "Как приготовить чай?"]) {
+    const result = new ConversationContextBuffer().add(phrase, 1_000, "active");
+    assert.equal(result.intent, "ignore");
+    assert.equal(result.shouldAnswer, false);
+    assert.equal(result.intentRescue, false);
+  }
+});

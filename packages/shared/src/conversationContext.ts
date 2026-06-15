@@ -1,5 +1,5 @@
 import { classifyTechnicalFragment } from "./liveAssist.js";
-import type { FragmentClassification } from "./liveAssist.js";
+import type { FragmentClassification, FragmentDetectionResult } from "./liveAssist.js";
 
 export type LiveAssistSensitivity = "conservative" | "balanced" | "active";
 
@@ -39,6 +39,7 @@ export type LiveContextDecisionReason =
   | "topic_intro"
   | "incomplete"
   | "ignored"
+  | "intent_rescue"
   | "active_topic_fragment"
   | "pending_answer_request"
   | "duplicate"
@@ -56,6 +57,9 @@ export interface LiveContextDecision extends ConversationContextSnapshot {
   sensitivity: LiveAssistSensitivity;
   decisionSource: LiveDecisionSource;
   pendingRequestText?: string;
+  intentRescue: boolean;
+  matchedQuestionPattern?: string;
+  matchedTechnicalTerm?: string;
 }
 
 export interface ConversationContextOptions {
@@ -71,6 +75,9 @@ interface PendingAnswerRequest {
   topic: TechnicalTopic;
   classification: FragmentClassification;
   timestamp: number;
+  intentRescue: boolean;
+  matchedQuestionPattern?: string;
+  matchedTechnicalTerm?: string;
 }
 
 const topicTerms: Record<TechnicalTopic, string[]> = {
@@ -80,7 +87,7 @@ const topicTerms: Record<TechnicalTopic, string[]> = {
   "DNS/DHCP": ["dns", "dhcp", "nslookup", "dig", "dns-запись", "dns запись", "dhcp lease", "аренда dhcp"],
   Proxmox: ["proxmox", "pve", "pvesm", "vzdump", "qm command", "qm list"],
   Docker: ["docker", "dockerfile", "docker image", "container", "registry", "контейнер", "образ docker"],
-  Linux: ["linux", "systemctl", "journalctl", "chmod", "chown", "fstab", "bash", "df -h", "free -h", "ip addr", "ip route"],
+  Linux: ["linux", "systemctl", "journalctl", "chmod", "chown", "fstab", "bash", "df -h", "free -h", "ip addr", "ip route", "sudo", "sudoers", "visudo", "usermod", "ufw", "firewall", "firewalld", "iptables", "sshd", "authorized_keys", "selinux"],
   Networking: ["networking", "network", "nat", "port", "ping", "traceroute", "tracert", "netcat", "маршрут", "сеть", "порт"],
   Git: ["git", "commit", "branch", "merge", "rebase", "pull request", "репозиторий", "коммит", "ветка git"]
 };
@@ -179,7 +186,8 @@ export class ConversationContextBuffer {
     this.prune(timestamp);
     const cleanedText = cleanupText(text);
     const fragmentTopic = detectTechnicalTopic(cleanedText);
-    const classification = classifyTechnicalFragment(cleanedText).classification;
+    const detection = classifyTechnicalFragment(cleanedText);
+    const classification = detection.classification;
     this.fragments.push({
       text: cleanedText,
       timestamp,
@@ -195,48 +203,50 @@ export class ConversationContextBuffer {
     const aggregatedClassification = classifyTechnicalFragment(aggregatedText).classification;
 
     if (isLikelyIncompleteConversationFragment(cleanedText)) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "wait", false, true, "incomplete", sensitivity);
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "wait", false, true, "incomplete", sensitivity, 0, "newest_fragment", undefined, detection);
     }
 
     if (isTopicIntroduction(cleanedText, fragmentTopic.currentTopic)) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "topic_intro", false, false, "topic_intro", sensitivity);
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "topic_intro", false, false, "topic_intro", sensitivity, 0, "newest_fragment", undefined, detection);
     }
 
     if (ignoredConversationPatterns.some((pattern) => pattern.test(normalizedNewestText))) {
       const pendingDecision = this.recoverPendingRequest(snapshot, sensitivity, timestamp);
       if (pendingDecision) return pendingDecision;
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored", sensitivity);
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored", sensitivity, 0, "newest_fragment", undefined, detection);
     }
 
     const hasIntent = hasAnswerIntent(cleanedText);
     const balancedAnswer = classification === "explicit_question"
       || (snapshot.currentTopic !== null && hasIntent);
-    const conservativeAnswer = snapshot.currentTopic !== null && hasIntent;
+    const conservativeAnswer = detection.intentRescue || (snapshot.currentTopic !== null && hasIntent);
     const activeTopicAnswer = isActiveTopicRequest(cleanedText, snapshot.currentTopic, classification);
     const shouldAnswer = sensitivity === "conservative"
       ? conservativeAnswer
       : sensitivity === "active"
         ? balancedAnswer || activeTopicAnswer
         : balancedAnswer;
-    const answerReason: LiveContextDecisionReason = activeTopicAnswer && !balancedAnswer
-      ? "active_topic_fragment"
-      : "answer";
+    const answerReason: LiveContextDecisionReason = detection.intentRescue
+      ? "intent_rescue"
+      : activeTopicAnswer && !balancedAnswer
+        ? "active_topic_fragment"
+        : "answer";
 
     if (!shouldAnswer) {
       const pendingDecision = this.recoverPendingRequest(snapshot, sensitivity, timestamp);
       if (pendingDecision) return pendingDecision;
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored", sensitivity);
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "ignore", false, false, "ignored", sensitivity, 0, "newest_fragment", undefined, detection);
     }
 
     if (this.answeredFragments.has(normalizedText)) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", false, false, "duplicate", sensitivity);
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", false, false, "duplicate", sensitivity, 0, "newest_fragment", undefined, detection);
     }
 
     const cooldownRemainingMs = snapshot.currentTopic
       ? this.getTopicCooldownRemaining(snapshot.currentTopic, normalizedText, timestamp, sensitivity)
       : 0;
     if (cooldownRemainingMs > 0) {
-      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", false, false, "topic_cooldown", sensitivity, cooldownRemainingMs);
+      return decision(snapshot, aggregatedText, normalizedText, aggregatedClassification, "answer_request", false, false, "topic_cooldown", sensitivity, cooldownRemainingMs, "newest_fragment", undefined, detection);
     }
 
     if (snapshot.currentTopic) {
@@ -245,7 +255,10 @@ export class ConversationContextBuffer {
         normalizedText,
         topic: snapshot.currentTopic,
         classification: aggregatedClassification,
-        timestamp
+        timestamp,
+        intentRescue: detection.intentRescue,
+        matchedQuestionPattern: detection.matchedQuestionPattern,
+        matchedTechnicalTerm: detection.matchedTechnicalTerm
       };
     }
 
@@ -261,7 +274,8 @@ export class ConversationContextBuffer {
       sensitivity,
       0,
       "newest_fragment",
-      aggregatedText
+      aggregatedText,
+      detection
     );
   }
 
@@ -340,7 +354,8 @@ export class ConversationContextBuffer {
       sensitivity,
       0,
       "pending_context",
-      pending.text
+      pending.text,
+      pending
     );
   }
 
@@ -477,7 +492,8 @@ function decision(
   sensitivity: LiveAssistSensitivity,
   cooldownRemainingMs = 0,
   decisionSource: LiveDecisionSource = "newest_fragment",
-  pendingRequestText?: string
+  pendingRequestText?: string,
+  detection?: Pick<FragmentDetectionResult, "intentRescue" | "matchedQuestionPattern" | "matchedTechnicalTerm">
 ): LiveContextDecision {
   return {
     ...snapshot,
@@ -491,7 +507,10 @@ function decision(
     cooldownRemainingMs,
     sensitivity,
     decisionSource,
-    pendingRequestText
+    pendingRequestText,
+    intentRescue: detection?.intentRescue ?? false,
+    matchedQuestionPattern: detection?.matchedQuestionPattern,
+    matchedTechnicalTerm: detection?.matchedTechnicalTerm
   };
 }
 

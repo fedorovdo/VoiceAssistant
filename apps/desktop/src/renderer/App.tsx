@@ -16,6 +16,7 @@ import type {
   SanitizedTranscript,
   SpeechToTextProviderId,
   TechnicalTopic,
+  UtteranceFlushReason,
   WorkMode
 } from "@voiceassistant/shared";
 import {
@@ -27,7 +28,8 @@ import {
   resolveLiveAssistDecision,
   resolveAnswerSource,
   sanitizeTranscript,
-  shouldSearchLocalKnowledge
+  shouldSearchLocalKnowledge,
+  UtteranceBuffer
 } from "@voiceassistant/shared";
 import { createTranslator } from "./i18n.js";
 import { MicrophoneLevelMeter } from "./MicrophoneLevelMeter.js";
@@ -83,6 +85,15 @@ interface LiveDecisionDiagnostics {
   sensitivity: LiveAssistSensitivity;
   decisionSource: LiveContextDecision["decisionSource"];
   pendingRequestText?: string;
+  intentRescue: boolean;
+  matchedQuestionPattern?: string;
+  matchedTechnicalTerm?: string;
+}
+
+interface UtteranceDiagnostics {
+  pendingText: string;
+  flushedText: string;
+  flushReason?: UtteranceFlushReason;
 }
 
 export function App() {
@@ -105,6 +116,10 @@ export function App() {
   const [recognitionMessage, setRecognitionMessage] = useState("");
   const [normalizedTerms, setNormalizedTerms] = useState<string[]>([]);
   const [liveDecisionDiagnostics, setLiveDecisionDiagnostics] = useState<LiveDecisionDiagnostics>();
+  const [utteranceDiagnostics, setUtteranceDiagnostics] = useState<UtteranceDiagnostics>({
+    pendingText: "",
+    flushedText: ""
+  });
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [sttCleanupStatus, setSttCleanupStatus] = useState<SttCleanupStatus>("idle");
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
@@ -118,18 +133,27 @@ export function App() {
   });
   const liveFragmentHandlerRef = useRef<(fragment: string, source: LiveFragmentSource, rawFragment: string) => void>(() => undefined);
   const conversationContextRef = useRef(new ConversationContextBuffer());
+  const utteranceBufferRef = useRef(new UtteranceBuffer());
+  const utteranceSourceRef = useRef<LiveFragmentSource>("microphone");
+  const utteranceTimerRef = useRef<number>();
   const pendingMicrophoneFragmentsRef = useRef<string[]>([]);
   const lastAcceptedTranscriptRef = useRef("");
   const processRecognizedFragment = useCallback((rawText: string, source: LiveFragmentSource) => {
     const sanitized = sanitizeTranscript(rawText, settings.answerLanguage);
 
-    if (!sanitized.shouldUse && sanitized.reason !== "incomplete") {
+    const shortLiveContinuation = settings.workMode === "live"
+      && sanitized.reason === "too_short"
+      && utteranceBufferRef.current.getPendingUtterance().length > 0;
+
+    if (!sanitized.shouldUse && sanitized.reason !== "incomplete" && !shortLiveContinuation) {
       setSttCleanupStatus("skipped");
       setRecognitionMessage(t("sttNoiseSkipped"));
       return;
     }
 
-    let candidate: SanitizedTranscript = sanitized;
+    let candidate: SanitizedTranscript = shortLiveContinuation
+      ? { text: sanitized.text, shouldUse: true, reason: "accepted", quality: "short_technical" }
+      : sanitized;
     if (source === "microphone") {
       const pendingFragments = pendingMicrophoneFragmentsRef.current;
       if (sanitized.reason === "incomplete") {
@@ -170,7 +194,7 @@ export function App() {
     setSttCleanupStatus("accepted");
     setRecognitionMessage("");
     liveFragmentHandlerRef.current(acceptedText, source, candidate.text);
-  }, [settings.answerLanguage, t]);
+  }, [settings.answerLanguage, settings.workMode, t]);
   const handleTranscript = useCallback((text: string) => {
     processRecognizedFragment(text, "microphone");
   }, [processRecognizedFragment]);
@@ -386,13 +410,7 @@ export function App() {
 
     const answerText = contextDecision.aggregatedText;
     const resolution = policyDecision.sourceResolution;
-    setRecognitionMessage(
-      contextDecision.currentTopic && shouldSearchLocalKnowledge(settings.answerSourceMode)
-        ? t("liveStatusSearchingTopic")
-        : contextDecision.currentTopic
-          ? t("liveStatusCurrentTopicRequest")
-          : t("liveStatusPreparing")
-    );
+    setRecognitionMessage(t("utteranceCollectedSearching"));
 
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
@@ -427,7 +445,55 @@ export function App() {
     }, Math.max(liveDebounceMs, throttleDelay));
   }, [requestAnswer, settings.answerMode, settings.answerSourceMode, settings.apiKey, settings.liveAssistSensitivity, settings.workMode, showLocalAnswer, t]);
 
-  liveFragmentHandlerRef.current = queueLiveAnswer;
+  const flushBufferedUtterance = useCallback((now = Date.now()) => {
+    if (utteranceTimerRef.current !== undefined) {
+      window.clearTimeout(utteranceTimerRef.current);
+      utteranceTimerRef.current = undefined;
+    }
+
+    const flushed = utteranceBufferRef.current.flush(now);
+    if (!flushed) return;
+
+    setUtteranceDiagnostics({
+      pendingText: "",
+      flushedText: flushed.text,
+      flushReason: flushed.reason
+    });
+    setRecognitionMessage(t("utteranceCollectedSearching"));
+    queueLiveAnswer(flushed.text, utteranceSourceRef.current, flushed.fragments.join(" | "));
+  }, [queueLiveAnswer, t]);
+
+  const bufferLiveFragment = useCallback((fragment: string, source: LiveFragmentSource) => {
+    if (settings.workMode !== "live") return;
+
+    utteranceSourceRef.current = source;
+    const now = Date.now();
+    const update = utteranceBufferRef.current.addFragment(fragment, now);
+    setUtteranceDiagnostics((current) => ({
+      ...current,
+      pendingText: update.pendingUtterance,
+      flushReason: undefined
+    }));
+
+    if (utteranceTimerRef.current !== undefined) {
+      window.clearTimeout(utteranceTimerRef.current);
+      utteranceTimerRef.current = undefined;
+    }
+
+    if (update.shouldFlush) {
+      flushBufferedUtterance(now);
+      return;
+    }
+
+    setRecognitionMessage(t("utteranceCollecting"));
+    utteranceTimerRef.current = window.setTimeout(() => {
+      if (utteranceBufferRef.current.shouldFlush(Date.now())) {
+        flushBufferedUtterance(Date.now());
+      }
+    }, 1_550);
+  }, [flushBufferedUtterance, settings.workMode, t]);
+
+  liveFragmentHandlerRef.current = bufferLiveFragment;
 
   useEffect(() => () => speechToTextProvider?.stop(), [speechToTextProvider]);
   useEffect(() => { void refreshAudioDevices(); }, [refreshAudioDevices]);
@@ -441,12 +507,21 @@ export function App() {
     pendingMicrophoneFragmentsRef.current = [];
     lastAcceptedTranscriptRef.current = "";
     setNormalizedTerms([]);
+    utteranceBufferRef.current.clear();
+    setUtteranceDiagnostics({ pendingText: "", flushedText: "" });
+    if (utteranceTimerRef.current !== undefined) {
+      window.clearTimeout(utteranceTimerRef.current);
+      utteranceTimerRef.current = undefined;
+    }
     conversationContextRef.current.clear();
     setLiveContextStatus({ currentTopic: null, fragmentCount: 0 });
   }, [settings.answerLanguage, settings.speechToTextProvider, speechToTextProvider, microphoneRecorder.stop, chunkTranscription.stopSession]);
   useEffect(() => () => {
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
+    }
+    if (utteranceTimerRef.current !== undefined) {
+      window.clearTimeout(utteranceTimerRef.current);
     }
   }, []);
 
@@ -455,6 +530,12 @@ export function App() {
     setRecognitionMessage("");
     setSttCleanupStatus("idle");
     pendingMicrophoneFragmentsRef.current = [];
+    utteranceBufferRef.current.clear();
+    setUtteranceDiagnostics({ pendingText: "", flushedText: "" });
+    if (utteranceTimerRef.current !== undefined) {
+      window.clearTimeout(utteranceTimerRef.current);
+      utteranceTimerRef.current = undefined;
+    }
 
     if (settings.speechToTextProvider === "microphone") {
       chunkTranscription.startSession();
@@ -482,6 +563,12 @@ export function App() {
     chunkTranscription.stopSession();
     microphoneRecorder.stop();
     pendingMicrophoneFragmentsRef.current = [];
+    utteranceBufferRef.current.clear();
+    setUtteranceDiagnostics((current) => ({ ...current, pendingText: "" }));
+    if (utteranceTimerRef.current !== undefined) {
+      window.clearTimeout(utteranceTimerRef.current);
+      utteranceTimerRef.current = undefined;
+    }
   }
 
   function clearRecognizedText() {
@@ -492,13 +579,19 @@ export function App() {
     lastAcceptedTranscriptRef.current = "";
     setNormalizedTerms([]);
     setLiveDecisionDiagnostics(undefined);
+    setUtteranceDiagnostics({ pendingText: "", flushedText: "" });
     answeredFragmentsRef.current.clear();
+    utteranceBufferRef.current.clear();
     conversationContextRef.current.clear();
     setLiveContextStatus({ currentTopic: null, fragmentCount: 0 });
     lastLiveAnswerAtRef.current = 0;
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
       liveTimerRef.current = undefined;
+    }
+    if (utteranceTimerRef.current !== undefined) {
+      window.clearTimeout(utteranceTimerRef.current);
+      utteranceTimerRef.current = undefined;
     }
   }
 
@@ -680,24 +773,30 @@ export function App() {
               </button>
             </div>
           ) : null}
-          {import.meta.env.DEV && showDiagnostics && settings.workMode === "live" && liveDecisionDiagnostics ? (
+          {import.meta.env.DEV && showDiagnostics && settings.workMode === "live" && (liveDecisionDiagnostics || utteranceDiagnostics.pendingText || utteranceDiagnostics.flushedText) ? (
             <div className="stt-diagnostics live-decision-diagnostics" id="recognized-panel-diagnostics">
               <strong>Диагностика Live Assist</strong>
               <div className="stt-diagnostics-grid">
-                <span>сырой фрагмент</span><code>{liveDecisionDiagnostics.rawFragment || "—"}</code>
-                <span>нормализованный</span><code>{liveDecisionDiagnostics.normalizedFragment || "—"}</code>
-                <span>агрегированный</span><code>{liveDecisionDiagnostics.aggregatedFragment || "—"}</code>
-                <span>тема</span><code>{liveDecisionDiagnostics.topic ?? "—"}</code>
-                <span>классификация</span><code>{liveDecisionDiagnostics.classification}</code>
-                <span>намерение</span><code>{liveDecisionDiagnostics.intent}</code>
-                <span>источник ответа</span><code>{liveDecisionDiagnostics.answerSourceMode}</code>
-                <span>чувствительность</span><code>{liveDecisionDiagnostics.sensitivity}</code>
-                <span>локальное совпадение</span><code>{String(liveDecisionDiagnostics.localMatchFound)}</code>
-                <span>решение</span><code>{liveDecisionDiagnostics.decision}</code>
-                <span>источник решения</span><code>{liveDecisionDiagnostics.decisionSource}</code>
-                <span>ожидающий запрос</span><code>{liveDecisionDiagnostics.pendingRequestText ?? "—"}</code>
-                <span>причина</span><code>{liveDecisionDiagnostics.reason}</code>
-                <span>осталось паузы</span><code>{formatCooldown(liveDecisionDiagnostics.cooldownRemainingMs)}</code>
+                <span>собираемая фраза</span><code>{utteranceDiagnostics.pendingText || "—"}</code>
+                <span>собранная фраза</span><code>{utteranceDiagnostics.flushedText || "—"}</code>
+                <span>причина flush</span><code>{utteranceDiagnostics.flushReason ?? "—"}</code>
+                <span>сырой фрагмент</span><code>{liveDecisionDiagnostics?.rawFragment || "—"}</code>
+                <span>нормализованный</span><code>{liveDecisionDiagnostics?.normalizedFragment || "—"}</code>
+                <span>агрегированный</span><code>{liveDecisionDiagnostics?.aggregatedFragment || "—"}</code>
+                <span>тема</span><code>{liveDecisionDiagnostics?.topic ?? "—"}</code>
+                <span>классификация</span><code>{liveDecisionDiagnostics?.classification ?? "—"}</code>
+                <span>намерение</span><code>{liveDecisionDiagnostics?.intent ?? "—"}</code>
+                <span>intentRescue</span><code>{String(liveDecisionDiagnostics?.intentRescue ?? false)}</code>
+                <span>шаблон вопроса</span><code>{liveDecisionDiagnostics?.matchedQuestionPattern ?? "—"}</code>
+                <span>технический термин</span><code>{liveDecisionDiagnostics?.matchedTechnicalTerm ?? "—"}</code>
+                <span>источник ответа</span><code>{liveDecisionDiagnostics?.answerSourceMode ?? "—"}</code>
+                <span>чувствительность</span><code>{liveDecisionDiagnostics?.sensitivity ?? "—"}</code>
+                <span>локальное совпадение</span><code>{String(liveDecisionDiagnostics?.localMatchFound ?? false)}</code>
+                <span>решение</span><code>{liveDecisionDiagnostics?.decision ?? "—"}</code>
+                <span>источник решения</span><code>{liveDecisionDiagnostics?.decisionSource ?? "—"}</code>
+                <span>ожидающий запрос</span><code>{liveDecisionDiagnostics?.pendingRequestText ?? "—"}</code>
+                <span>причина</span><code>{liveDecisionDiagnostics?.reason ?? "—"}</code>
+                <span>осталось паузы</span><code>{formatCooldown(liveDecisionDiagnostics?.cooldownRemainingMs ?? 0)}</code>
               </div>
             </div>
           ) : null}
@@ -868,6 +967,9 @@ function createLiveDecisionDiagnostics(
     sensitivity: contextDecision.sensitivity,
     decisionSource: contextDecision.decisionSource,
     pendingRequestText: contextDecision.pendingRequestText,
+    intentRescue: contextDecision.intentRescue,
+    matchedQuestionPattern: contextDecision.matchedQuestionPattern,
+    matchedTechnicalTerm: contextDecision.matchedTechnicalTerm,
     decision,
     reason,
     cooldownRemainingMs: contextDecision.cooldownRemainingMs,

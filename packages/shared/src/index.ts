@@ -49,3 +49,4 @@ export * from "./desktopSettings.js";
 export * from "./conversationContext.js";
 export * from "./technicalTermNormalizer.js";
 export * from "./liveAssistDecision.js";
+export * from "./utteranceBuffer.js";

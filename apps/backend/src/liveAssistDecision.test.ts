@@ -191,3 +191,43 @@ test("Kubernetes topic resolves a short restart follow-up locally", () => {
   assert.equal(contextDecision.shouldAnswer, true);
   assert.equal(matches[0]?.id, "kubectl-rollout-restart");
 });
+
+test("local-only answers rescued sudo and Linux security questions", () => {
+  for (const [phrase, expectedCard] of [
+    ["Как добавить пользователю права sudo?", "linux-add-user-sudo"],
+    ["Как проверить безопасность в Linux?", "linux-security-quick-check"]
+  ] as const) {
+    const contextDecision = new ConversationContextBuffer().add(phrase, 1_000, "balanced");
+    const matches = findLiveKnowledgeCards(phrase, contextDecision.aggregatedText, contextDecision.currentTopic);
+    const decision = resolveLiveAssistDecision({
+      contextDecision,
+      answerSourceMode: "local-only",
+      hasLocalMatch: matches.length > 0,
+      hasApiKey: false,
+      answerMode: "short"
+    });
+
+    assert.equal(contextDecision.intentRescue, phrase.includes("sudo"));
+    assert.equal(matches[0]?.id, expectedCard);
+    assert.equal(decision.action, "answer");
+    assert.equal(decision.sourceResolution, "local");
+  }
+});
+
+test("local-only answers a complete broad Linux permissions utterance", () => {
+  const phrase = "Как дать права в Linux?";
+  const contextDecision = new ConversationContextBuffer().add(phrase, 1_000, "balanced");
+  const matches = findLiveKnowledgeCards(phrase, contextDecision.aggregatedText, contextDecision.currentTopic);
+  const decision = resolveLiveAssistDecision({
+    contextDecision,
+    answerSourceMode: "local-only",
+    hasLocalMatch: matches.length > 0,
+    hasApiKey: false,
+    answerMode: "short"
+  });
+
+  assert.equal(contextDecision.shouldAnswer, true);
+  assert.equal(matches[0]?.id, "linux-permissions-overview");
+  assert.equal(decision.action, "answer");
+  assert.equal(decision.sourceResolution, "local");
+});

@@ -90,7 +90,7 @@ The desktop workspace supports **Vertical** and **Horizontal** panel layouts. Ch
 
 ## Live Assist Mode
 
-Live Assist remains conservative: it classifies each completed Mock STT or microphone transcript as an explicit technical question, a technical term, or ignored conversation. Only suitable fragments are answered automatically, with debounce, throttling, duplicate prevention, and no parallel answer requests.
+Live Assist remains conservative: it classifies each completed Mock STT or microphone transcript as an explicit technical question, a technical term, or ignored conversation. A focused intent-rescue check prevents practical admin questions from being falsely ignored when a question/help phrase is paired with a clear technical term such as Linux, sudo, firewall, systemctl, Docker, or Kubernetes. Ordinary conversation, lyrics-like fragments, and questions without technical context remain ignored. Only suitable fragments are answered automatically, with debounce, throttling, duplicate prevention, and no parallel answer requests.
 
 Topic introductions such as `Давайте поговорим о Kubernetes` set the in-memory conversation topic without requesting an immediate answer. Live Assist then waits for a question or command request and can qualify short follow-ups such as `Какие основные команды?` or `Как посмотреть логи?` with that topic. Explicit requests trigger answers normally, while non-technical conversation remains ignored.
 
@@ -106,15 +106,19 @@ The selected sensitivity is stored with the other desktop settings, shown in the
 
 Live Assist also keeps a lightweight in-memory context of up to ten recent accepted fragments for roughly 90 seconds. It detects the current broad technical topic, may combine a topic-setting phrase with the next question, and can wait briefly when a phrase appears incomplete. A useful unanswered request remains pending for about 25 seconds, so a later ignored or noisy STT fragment does not erase it before the answer flow runs. Local knowledge checks the newest or pending request first and then the compact aggregate, while GPT receives the aggregate. Cooldown blocks exact and near-duplicate questions without suppressing a clearly different follow-up on the same topic.
 
+Before making an automatic decision, Live Assist briefly buffers nearby accepted speech fragments into one utterance. Short pieces such as `Как дать права?`, `В Linux.`, and `sudo.` are combined before classification and local knowledge lookup. A clearly complete technical question can flush immediately; otherwise the buffer waits for punctuation, up to three fragments, or a short idle pause. This reduces premature answers caused by experimental STT chunk boundaries.
+
 Development builds include collapsed Live Assist and STT diagnostics. Use **Show diagnostics** below the recognized text to inspect the newest fragment, pending request context, aggregate, topic, classification, answer-source mode, final decision, reason, and remaining cooldown. The compact audio status stays visible while detailed diagnostics are hidden. Diagnostics contain no API keys, raw audio, or persisted conversation data and are intended for tuning automatic-answer behavior.
 
-Conversation context exists only in renderer memory. It is cleared by the **Clear** action and is never written to disk or added to the microphone upload.
+Conversation context and the pending utterance buffer exist only in renderer memory. They are cleared by the **Clear** action and are never written to disk or added to the microphone upload.
 
 For Russian speech, accepted STT fragments also pass through a conservative technical-term normalizer. Common spoken or distorted forms such as `Кубернетес`, `кубси тейл`, `докер образ`, and `журнал контрол` are converted to canonical terms before topic detection, local knowledge matching, and GPT prompting. Only the normalized text and an in-memory replacement summary are retained; this context is not saved to disk.
 
 ## Local Knowledge Cards
 
-VoiceAssistant includes an expanded in-memory practical command reference for Linux troubleshooting, Docker and Docker Compose, Kubernetes, networking, Windows and Active Directory, Proxmox, and Git. It covers service and log diagnostics, filesystems and permissions, containers and images, kubectl troubleshooting, port and DNS checks, Group Policy and AD replication, virtualization storage, backups, and everyday version-control commands. Cards contain concise Russian explanations, practical bullets, commands, Russian and English aliases, and related terms.
+VoiceAssistant includes an expanded in-memory practical command reference for Linux troubleshooting, Docker and Docker Compose, Kubernetes, networking, Windows and Active Directory, Proxmox, and Git. It covers service and log diagnostics, filesystems and permissions, Linux sudo/sudoers, user groups, firewall and SSH security checks, containers and images, kubectl troubleshooting, port and DNS checks, Group Policy and AD replication, virtualization storage, backups, and everyday version-control commands. Cards contain concise Russian explanations, practical bullets, commands, Russian and English aliases, and related terms.
+
+Broad practical questions such as `Как дать права в Linux?` are answered locally with a short guide to `chmod`, `chown`, `sudo`, and user groups, without requiring an API key.
 
 Manual Ask and Live Assist check these cards before waiting for GPT. A matching card is shown immediately with the source label **local knowledge**, and it works without an API key. In interview and learning modes, a configured GPT provider may enrich that result while the local card stays visible; the source changes clearly when the GPT response arrives. Without a local match, an API key is required for a GPT answer.
 
