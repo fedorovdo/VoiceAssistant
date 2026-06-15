@@ -111,3 +111,18 @@ test("findKnowledgeCards matches broad Linux permission questions conservatively
   assert.deepEqual(findKnowledgeCards("как дать подарок"), []);
   assert.deepEqual(findKnowledgeCards("как дать совет"), []);
 });
+
+test("findKnowledgeCards matches Dockerfile questions and STT distortions", () => {
+  for (const phrase of [
+    "Что такое Docker-файл?",
+    "Из чего состоит Dockerfile?",
+    "Что стоит Docker-файл?",
+    "Что состоит Docker-файл?",
+    "Что в Dockerfile?",
+    "Что вы знаете про Dockerfile?"
+  ]) {
+    assert.equal(findKnowledgeCards(phrase)[0]?.id, "dockerfile", phrase);
+  }
+
+  assert.deepEqual(findKnowledgeCards("что стоит стол"), []);
+});

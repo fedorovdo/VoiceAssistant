@@ -120,6 +120,8 @@ VoiceAssistant includes an expanded in-memory practical command reference for Li
 
 Broad practical questions such as `Как дать права в Linux?` are answered locally with a short guide to `chmod`, `chown`, `sudo`, and user groups, without requiring an API key.
 
+Dockerfile questions such as `Что такое Dockerfile?` and common Russian STT variants are normalized and answered from the same local reference.
+
 Manual Ask and Live Assist check these cards before waiting for GPT. A matching card is shown immediately with the source label **local knowledge**, and it works without an API key. In interview and learning modes, a configured GPT provider may enrich that result while the local card stays visible; the source changes clearly when the GPT response arrives. Without a local match, an API key is required for a GPT answer.
 
 Local-only mode includes a concise Kubernetes/kubectl command overview, so common requests such as `основные команды Kubernetes`, `команды kubectl`, and Pod log checks can be answered without GPT.

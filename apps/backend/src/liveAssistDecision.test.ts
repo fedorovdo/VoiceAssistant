@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   ConversationContextBuffer,
   findLiveKnowledgeCards,
+  normalizeTechnicalTerms,
   resolveLiveAssistDecision
 } from "@voiceassistant/shared";
 
@@ -228,6 +229,24 @@ test("local-only answers a complete broad Linux permissions utterance", () => {
 
   assert.equal(contextDecision.shouldAnswer, true);
   assert.equal(matches[0]?.id, "linux-permissions-overview");
+  assert.equal(decision.action, "answer");
+  assert.equal(decision.sourceResolution, "local");
+});
+
+test("local-only answers a repaired Dockerfile utterance", () => {
+  const phrase = normalizeTechnicalTerms("Что стоит Docker-файл?").text;
+  const contextDecision = new ConversationContextBuffer().add(phrase, 1_000, "balanced");
+  const matches = findLiveKnowledgeCards(phrase, contextDecision.aggregatedText, contextDecision.currentTopic);
+  const decision = resolveLiveAssistDecision({
+    contextDecision,
+    answerSourceMode: "local-only",
+    hasLocalMatch: matches.length > 0,
+    hasApiKey: false,
+    answerMode: "short"
+  });
+
+  assert.equal(contextDecision.shouldAnswer, true);
+  assert.equal(matches[0]?.id, "dockerfile");
   assert.equal(decision.action, "answer");
   assert.equal(decision.sourceResolution, "local");
 });

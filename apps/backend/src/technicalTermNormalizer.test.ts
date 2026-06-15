@@ -17,6 +17,27 @@ test("normalizeTechnicalTerms restores Docker image wording", () => {
   assert.deepEqual(result.replacements.map((replacement) => replacement.to), ["Docker image"]);
 });
 
+test("normalizeTechnicalTerms restores Dockerfile variants and repairs STT phrases", () => {
+  for (const variant of [
+    "докер файл",
+    "докерфайл",
+    "docker файл",
+    "docker-файл",
+    "docker file",
+    "docker-файле",
+    "докер файле",
+    "докер-файле"
+  ]) {
+    assert.equal(normalizeTechnicalTerms(variant).text, "Dockerfile");
+  }
+
+  assert.equal(normalizeTechnicalTerms("Что стоит Docker-файл?").text, "что такое Dockerfile?");
+  assert.equal(normalizeTechnicalTerms("Что состоит Docker-файл?").text, "из чего состоит Dockerfile?");
+  assert.equal(normalizeTechnicalTerms("Что в Docker-файле?").text, "из чего состоит Dockerfile?");
+  assert.equal(normalizeTechnicalTerms("Из чего Dockerfile?").text, "из чего состоит Dockerfile?");
+  assert.equal(normalizeTechnicalTerms("что стоит стол").text, "что стоит стол");
+});
+
 test("normalizeTechnicalTerms restores Linux command wording", () => {
   assert.equal(
     normalizeTechnicalTerms("как посмотреть журнал контрол сервиса").text,

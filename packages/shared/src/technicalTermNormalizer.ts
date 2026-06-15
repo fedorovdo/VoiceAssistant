@@ -27,7 +27,12 @@ const rules: NormalizationRule[] = [
   rule("(?:сервис\\s+кубернетес|кубернетес\\s+сервис)", "Kubernetes service", "Kubernetes service"),
   rule("(?:докер\\s+(?:образ|имидж)|образ\\s+докер)", "Docker image", "Docker image"),
   rule("(?:контейнер\\s+докер|докер\\s+контейнер)", "Docker container", "Docker container"),
-  rule("(?:докер\\s*файл|докерфайл)", "Dockerfile", "Dockerfile"),
+  rule("(?:(?:докер|docker)[\\s-]*(?:файл(?:е)?|file)|докерфайл(?:е)?)", "Dockerfile", "Dockerfile"),
+  repair("что\\s+стоит\\s+dockerfile", "что такое Dockerfile"),
+  repair("что\\s+состоит\\s+dockerfile", "из чего состоит Dockerfile"),
+  repair("что\\s+в\\s+dockerfile", "из чего состоит Dockerfile"),
+  repair("из\\s+чего\\s+dockerfile", "из чего состоит Dockerfile"),
+  repair("что\\s+вы\\s+знаете\\s+про\\s+dockerfile", "что такое Dockerfile"),
   rule("(?:докер\\s+композ|docker\\s+композ|докер\\s+compose)", "Docker Compose", "Docker Compose"),
   rule("(?:кубси\\s+тейл|куб\\s+си\\s+тейл|кубсити|кубси|куб\\s+ctl|куб\\s+цтл|куб\\s+си\\s+ти\\s+эл)", "kubectl", "kubectl"),
   rule("(?:кубернетес|кубернетис|кубер)", "Kubernetes", "Kubernetes"),
@@ -110,6 +115,15 @@ function rule(
     target,
     reason: "Russian STT technical term normalization",
     context
+  };
+}
+
+function repair(source: string, replacement: string): NormalizationRule {
+  return {
+    pattern: new RegExp(`(?<![\\p{L}\\p{N}])(?:${source})(?![\\p{L}\\p{N}])`, "giu"),
+    replacement,
+    target: replacement,
+    reason: "Dockerfile-specific STT phrase repair"
   };
 }
 
