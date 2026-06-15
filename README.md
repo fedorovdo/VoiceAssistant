@@ -46,6 +46,29 @@ To start both development processes in one terminal with separate `backend` and 
 npm run dev:all
 ```
 
+## Development Troubleshooting
+
+If a previous Node.js, Vite, Fastify, or Electron development session did not shut down cleanly, check the two VoiceAssistant ports:
+
+```powershell
+npm run check:ports
+```
+
+Stop only the processes listening on the backend and Vite development ports, plus Electron processes whose command line clearly belongs to this repository:
+
+```powershell
+npm run stop:dev
+```
+
+Run the backend tests and the complete production build with either command:
+
+```powershell
+npm run verify
+npm run verify:win
+```
+
+`EADDRINUSE` for `127.0.0.1:8787` means another process is already listening on the Fastify backend port. Run `npm run check:ports` to inspect its PID, then `npm run stop:dev` before starting a fresh development session.
+
 On Windows, the PowerShell helper can be launched from the repository root:
 
 ```powershell
