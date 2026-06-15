@@ -124,6 +124,8 @@ Dockerfile questions such as `Что такое Dockerfile?` and common Russian 
 
 Manual Ask and Live Assist check these cards before waiting for GPT. A matching card is shown immediately with the source label **local knowledge**, and it works without an API key. In interview and learning modes, a configured GPT provider may enrich that result while the local card stays visible; the source changes clearly when the GPT response arrives. Without a local match, an API key is required for a GPT answer.
 
+In **Local knowledge only** mode, Manual Ask and Live Assist use the same local lookup. Live Assist automatically renders a matched card as soon as the buffered utterance is complete; unmatched or ignored fragments update only the compact status and do not clear the last useful answer.
+
 Local-only mode includes a concise Kubernetes/kubectl command overview, so common requests such as `основные команды Kubernetes`, `команды kubectl`, and Pod log checks can be answered without GPT.
 
 Matching is conservative and normalizes Russian and English aliases. Short generic words such as `pod` or `free` require question or technical context to avoid noisy answers.

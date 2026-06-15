@@ -21,8 +21,7 @@ import type {
 } from "@voiceassistant/shared";
 import {
   ConversationContextBuffer,
-  findLiveKnowledgeCards,
-  findKnowledgeCards,
+  findLocalKnowledgeCards,
   migrateDesktopSettings,
   normalizeTechnicalTerms,
   resolveLiveAssistDecision,
@@ -82,6 +81,9 @@ interface LiveDecisionDiagnostics {
   cooldownRemainingMs: number;
   intent: LiveAssistIntent;
   localMatchFound: boolean;
+  matchedCardId?: string;
+  matchedCardTitle?: string;
+  answerRendered: boolean;
   sensitivity: LiveAssistSensitivity;
   decisionSource: LiveContextDecision["decisionSource"];
   pendingRequestText?: string;
@@ -210,6 +212,7 @@ export function App() {
   });
   const liveTimerRef = useRef<number>();
   const answeredFragmentsRef = useRef(new Set<string>());
+  const lastRenderedLiveFragmentRef = useRef("");
   const lastLiveAnswerAtRef = useRef(0);
   const requestInFlightRef = useRef(false);
   const isMicrophoneActive = microphoneRecorder.status === "recording" || microphoneRecorder.status === "requesting_permission";
@@ -342,8 +345,14 @@ export function App() {
     const knowledgeFragment = contextDecision.decisionSource === "pending_context"
       ? contextDecision.pendingRequestText ?? fragment
       : fragment;
+    if (contextDecision.shouldAnswer && shouldSearchLocalKnowledge(settings.answerSourceMode)) {
+      setRecognitionMessage(t("liveStatusSearchingLocal"));
+    }
     const knowledgeMatches = contextDecision.shouldAnswer && shouldSearchLocalKnowledge(settings.answerSourceMode)
-      ? findLiveKnowledgeCards(knowledgeFragment, contextDecision.aggregatedText, contextDecision.currentTopic)
+      ? findLocalKnowledgeCards(knowledgeFragment, {
+        aggregatedText: contextDecision.aggregatedText,
+        currentTopic: contextDecision.currentTopic
+      })
       : [];
     const policyDecision = resolveLiveAssistDecision({
       contextDecision,
@@ -353,14 +362,16 @@ export function App() {
       answerMode: settings.answerMode
     });
 
-    setLiveDecisionDiagnostics(createLiveDecisionDiagnostics(
+    const isRenderedDuplicate = policyDecision.action === "duplicate"
+      && lastRenderedLiveFragmentRef.current === contextDecision.normalizedText;
+    if (!isRenderedDuplicate) setLiveDecisionDiagnostics(createLiveDecisionDiagnostics(
       rawFragment,
       fragment,
       contextDecision,
       settings.answerSourceMode,
       policyDecision.action,
       policyDecision.reason,
-      knowledgeMatches.length > 0
+      knowledgeMatches
     ));
 
     if (policyDecision.action === "topic_intro") {
@@ -372,7 +383,7 @@ export function App() {
       return;
     }
     if (policyDecision.action === "duplicate") {
-      setRecognitionMessage(t("liveStatusDuplicate"));
+      if (!isRenderedDuplicate) setRecognitionMessage(t("liveStatusDuplicate"));
       return;
     }
     if (policyDecision.action === "cooldown") {
@@ -395,22 +406,27 @@ export function App() {
     }
 
     if (answeredFragmentsRef.current.has(contextDecision.normalizedText)) {
-      setLiveDecisionDiagnostics(createLiveDecisionDiagnostics(
-        rawFragment,
-        fragment,
-        contextDecision,
-        settings.answerSourceMode,
-        "duplicate",
-        "pending_or_answered_duplicate",
-        knowledgeMatches.length > 0
-      ));
-      setRecognitionMessage(t("liveStatusDuplicate"));
       return;
     }
 
     const answerText = contextDecision.aggregatedText;
     const resolution = policyDecision.sourceResolution;
-    setRecognitionMessage(t("utteranceCollectedSearching"));
+
+    if (resolution === "local" || resolution === "local-and-gpt") {
+      showLocalAnswer(knowledgeMatches);
+      conversationContextRef.current.markAnswered(contextDecision);
+      answeredFragmentsRef.current.add(contextDecision.normalizedText);
+      lastRenderedLiveFragmentRef.current = contextDecision.normalizedText;
+      lastLiveAnswerAtRef.current = Date.now();
+      setLiveDecisionDiagnostics((current) => current ? { ...current, answerRendered: true } : current);
+      setRecognitionMessage(resolution === "local" ? t("liveStatusLocalFound") : t("enrichingWithGpt"));
+    } else {
+      setRecognitionMessage(t("utteranceCollectedSearching"));
+    }
+
+    if (resolution === "local") {
+      return;
+    }
 
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
@@ -422,17 +438,6 @@ export function App() {
       if (!resolution) return;
       lastLiveAnswerAtRef.current = Date.now();
 
-      if (resolution === "local" || resolution === "local-and-gpt") {
-        showLocalAnswer(knowledgeMatches);
-        conversationContextRef.current.markAnswered(contextDecision);
-        answeredFragmentsRef.current.add(contextDecision.normalizedText);
-      }
-
-      if (resolution === "local") {
-        setRecognitionMessage("");
-        return;
-      }
-
       const sent = await requestAnswer(answerText, "live", resolution === "local-and-gpt");
       if (!sent && resolution === "gpt") {
         conversationContextRef.current.clearPendingRequest();
@@ -440,6 +445,10 @@ export function App() {
       } else if (resolution === "gpt") {
         conversationContextRef.current.markAnswered(contextDecision);
         answeredFragmentsRef.current.add(contextDecision.normalizedText);
+        lastRenderedLiveFragmentRef.current = contextDecision.normalizedText;
+      }
+      if (sent) {
+        setLiveDecisionDiagnostics((current) => current ? { ...current, answerRendered: true } : current);
       }
       setRecognitionMessage("");
     }, Math.max(liveDebounceMs, throttleDelay));
@@ -514,6 +523,8 @@ export function App() {
       utteranceTimerRef.current = undefined;
     }
     conversationContextRef.current.clear();
+    answeredFragmentsRef.current.clear();
+    lastRenderedLiveFragmentRef.current = "";
     setLiveContextStatus({ currentTopic: null, fragmentCount: 0 });
   }, [settings.answerLanguage, settings.speechToTextProvider, speechToTextProvider, microphoneRecorder.stop, chunkTranscription.stopSession]);
   useEffect(() => () => {
@@ -581,6 +592,7 @@ export function App() {
     setLiveDecisionDiagnostics(undefined);
     setUtteranceDiagnostics({ pendingText: "", flushedText: "" });
     answeredFragmentsRef.current.clear();
+    lastRenderedLiveFragmentRef.current = "";
     utteranceBufferRef.current.clear();
     conversationContextRef.current.clear();
     setLiveContextStatus({ currentTopic: null, fragmentCount: 0 });
@@ -614,7 +626,7 @@ export function App() {
     if (shouldSearchLocalKnowledge(settings.answerSourceMode)) {
       setIsSearchingLocal(true);
       await showLocalSearchFeedback();
-      knowledgeMatches = findKnowledgeCards(manualText);
+      knowledgeMatches = findLocalKnowledgeCards(manualText);
       setIsSearchingLocal(false);
     }
 
@@ -792,6 +804,8 @@ export function App() {
                 <span>источник ответа</span><code>{liveDecisionDiagnostics?.answerSourceMode ?? "—"}</code>
                 <span>чувствительность</span><code>{liveDecisionDiagnostics?.sensitivity ?? "—"}</code>
                 <span>локальное совпадение</span><code>{String(liveDecisionDiagnostics?.localMatchFound ?? false)}</code>
+                <span>карточка</span><code>{liveDecisionDiagnostics?.matchedCardId ? `${liveDecisionDiagnostics.matchedCardId} — ${liveDecisionDiagnostics.matchedCardTitle}` : "—"}</code>
+                <span>ответ показан</span><code>{String(liveDecisionDiagnostics?.answerRendered ?? false)}</code>
                 <span>решение</span><code>{liveDecisionDiagnostics?.decision ?? "—"}</code>
                 <span>источник решения</span><code>{liveDecisionDiagnostics?.decisionSource ?? "—"}</code>
                 <span>ожидающий запрос</span><code>{liveDecisionDiagnostics?.pendingRequestText ?? "—"}</code>
@@ -954,8 +968,9 @@ function createLiveDecisionDiagnostics(
   answerSourceMode: AnswerSourceMode,
   decision: LiveAssistAction,
   reason: string,
-  localMatchFound: boolean
+  knowledgeMatches: KnowledgeCard[]
 ): LiveDecisionDiagnostics {
+  const matchedCard = knowledgeMatches[0];
   return {
     rawFragment,
     normalizedFragment,
@@ -973,7 +988,10 @@ function createLiveDecisionDiagnostics(
     decision,
     reason,
     cooldownRemainingMs: contextDecision.cooldownRemainingMs,
-    localMatchFound
+    localMatchFound: knowledgeMatches.length > 0,
+    matchedCardId: matchedCard?.id,
+    matchedCardTitle: matchedCard?.title,
+    answerRendered: false
   };
 }
 

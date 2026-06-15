@@ -130,8 +130,8 @@ function isClearlyCompleteUtterance(combinedText: string, newestText: string): b
   if (isLikelyContinuation(newestText)) return false;
   const normalized = normalize(combinedText);
   const wordCount = normalized.split(" ").filter(Boolean).length;
-  const hasExplicitQuestion = /(?:что такое|как работает|для чего|чем отличается|как проверить|как добавить|как выдать|как дать|как настроить|как посмотреть)/i.test(normalized);
-  const hasStrongTechnicalTerm = /(?:\blinux\b|\bsudo\b|\bsudoers\b|\bdocker\b|\bkubernetes\b|\bkubectl\b|\bfirewall\b|\bsystemctl\b|\bjournalctl\b|\bactive directory\b|\bdns\b|\bdhcp\b|\bproxmox\b)/i.test(normalized);
+  const hasExplicitQuestion = /(?:что такое|из чего состоит|для чего (?:нужен|нужна|нужно|нужны|применяется|используется)|как работает|чем отличается|как проверить|как добавить|как выдать|как дать|как настроить|как посмотреть)/i.test(normalized);
+  const hasStrongTechnicalTerm = /(?:\bdockerfile\b|\blinux\b|\bsudo\b|\bsudoers\b|\bdocker\b|\bkubernetes\b|\bkubectl\b|\bfirewall\b|\bsystemctl\b|\bjournalctl\b|\bactive directory\b|\bdns\b|\bdhcp\b|\bproxmox\b)/i.test(normalized);
 
   if (/\?$/.test(newestText.trim()) && hasExplicitQuestion && hasStrongTechnicalTerm) return true;
   return wordCount >= 5 && hasStrongTechnicalTerm && !isLikelyIncompleteStart(normalized);

@@ -78,15 +78,27 @@ export function findLiveKnowledgeCards(
   aggregatedText: string,
   currentTopic?: LiveContextDecision["currentTopic"]
 ): KnowledgeCard[] {
+  return findLocalKnowledgeCards(fragment, { aggregatedText, currentTopic });
+}
+
+export interface LocalKnowledgeLookupContext {
+  aggregatedText?: string;
+  currentTopic?: LiveContextDecision["currentTopic"];
+}
+
+export function findLocalKnowledgeCards(
+  fragment: string,
+  context: LocalKnowledgeLookupContext = {}
+): KnowledgeCard[] {
   const directMatches = findKnowledgeCards(fragment);
   if (directMatches.length > 0) return directMatches;
 
-  if (currentTopic) {
-    const contextualMatches = findKnowledgeCards(`${fragment} ${topicSearchContext(currentTopic)}`);
+  if (context.currentTopic) {
+    const contextualMatches = findKnowledgeCards(`${fragment} ${topicSearchContext(context.currentTopic)}`);
     if (contextualMatches.length > 0) return contextualMatches;
   }
 
-  return findKnowledgeCards(aggregatedText);
+  return context.aggregatedText ? findKnowledgeCards(context.aggregatedText) : [];
 }
 
 function topicSearchContext(topic: NonNullable<LiveContextDecision["currentTopic"]>): string {

@@ -46,6 +46,28 @@ test("complete explicit question flushes immediately while incomplete phrase wai
   assert.equal(incomplete.shouldFlush, false);
 });
 
+test("complete Dockerfile questions flush immediately", () => {
+  for (const phrase of [
+    "Что такое Dockerfile?",
+    "Из чего состоит Dockerfile?",
+    "Для чего применяется Dockerfile?"
+  ]) {
+    const update = new UtteranceBuffer().addFragment(phrase, 1_000);
+    assert.equal(update.shouldFlush, true, phrase);
+    assert.equal(update.flushReason, "strong_punctuation", phrase);
+  }
+});
+
+test("complete Dockerfile question without punctuation flushes after idle timeout", () => {
+  const buffer = new UtteranceBuffer({ idleFlushMs: 1_500 });
+  const update = buffer.addFragment("Из чего состоит Dockerfile", 1_000);
+
+  assert.equal(update.shouldFlush, false);
+  assert.equal(buffer.shouldFlush(2_499), false);
+  assert.equal(buffer.shouldFlush(2_500), true);
+  assert.equal(buffer.flush(2_500)?.text, "Из чего состоит Dockerfile.");
+});
+
 test("utterance buffer clears pending text", () => {
   const buffer = new UtteranceBuffer();
   buffer.addFragment("Как дать права?", 1_000);

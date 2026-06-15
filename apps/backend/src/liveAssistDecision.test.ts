@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   ConversationContextBuffer,
+  findLocalKnowledgeCards,
   findLiveKnowledgeCards,
   normalizeTechnicalTerms,
   resolveLiveAssistDecision
@@ -249,4 +250,59 @@ test("local-only answers a repaired Dockerfile utterance", () => {
   assert.equal(matches[0]?.id, "dockerfile");
   assert.equal(decision.action, "answer");
   assert.equal(decision.sourceResolution, "local");
+});
+
+test("Live local-only answers common Dockerfile questions with the same local lookup as Manual", () => {
+  for (const phrase of [
+    "Что такое Dockerfile?",
+    "Из чего состоит Dockerfile?",
+    "Для чего применяется Dockerfile?"
+  ]) {
+    const contextDecision = new ConversationContextBuffer().add(phrase, 1_000, "balanced");
+    const manualMatches = findLocalKnowledgeCards(phrase);
+    const liveMatches = findLocalKnowledgeCards(phrase, {
+      aggregatedText: contextDecision.aggregatedText,
+      currentTopic: contextDecision.currentTopic
+    });
+    const decision = resolveLiveAssistDecision({
+      contextDecision,
+      answerSourceMode: "local-only",
+      hasLocalMatch: liveMatches.length > 0,
+      hasApiKey: false,
+      answerMode: "short"
+    });
+
+    assert.equal(contextDecision.intent, "answer_request", phrase);
+    assert.equal(manualMatches[0]?.id, "dockerfile", phrase);
+    assert.equal(liveMatches[0]?.id, manualMatches[0]?.id, phrase);
+    assert.equal(decision.action, "answer", phrase);
+    assert.equal(decision.sourceResolution, "local", phrase);
+  }
+});
+
+test("Live local-only unknown request stays local and ignored fragments preserve the prior answer", () => {
+  const unknownContext = new ConversationContextBuffer().add("Как работает Docker quantum cache?", 1_000, "balanced");
+  const unknownDecision = resolveLiveAssistDecision({
+    contextDecision: unknownContext,
+    answerSourceMode: "local-only",
+    hasLocalMatch: false,
+    hasApiKey: true,
+    answerMode: "short"
+  });
+  assert.equal(unknownDecision.action, "no_local_match");
+  assert.equal(unknownDecision.sourceResolution, "local-not-found");
+
+  const previousAnswer = "Dockerfile — текстовый рецепт сборки Docker image.";
+  const ignoredContext = new ConversationContextBuffer().add("Спасибо, следующий слайд.", 2_000, "balanced");
+  const ignoredDecision = resolveLiveAssistDecision({
+    contextDecision: ignoredContext,
+    answerSourceMode: "local-only",
+    hasLocalMatch: false,
+    hasApiKey: false,
+    answerMode: "short"
+  });
+  const answerAfterIgnoredFragment = ignoredDecision.action === "answer" ? "replacement" : previousAnswer;
+
+  assert.equal(ignoredDecision.action, "ignore");
+  assert.equal(answerAfterIgnoredFragment, previousAnswer);
 });
