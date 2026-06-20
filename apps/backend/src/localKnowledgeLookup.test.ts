@@ -104,3 +104,25 @@ test("Manual and Live lookup agree for natural sudo and Docker layer phrases", (
     assert.equal(liveResult.bestMatch?.id, manualResult.bestMatch?.id, query);
   }
 });
+
+test("Manual and Live lookup agree on focused Active Directory user actions", () => {
+  const cases = [
+    ["Как добавить пользователя в Active Directory?", "active-directory-create-user"],
+    ["Как создать пользователя в AD?", "active-directory-create-user"],
+    ["Как проверить пользователя Active Directory?", "ad-user-lookup"],
+    ["Как добавить пользователя в группу Active Directory?", "active-directory-add-user-to-group"]
+  ] as const;
+
+  for (const [query, expectedCardId] of cases) {
+    const contextDecision = new ConversationContextBuffer().add(query, 1_000, "balanced");
+    const manualResult = lookupLocalKnowledge(query);
+    const liveResult = lookupLocalKnowledge(query, {
+      aggregatedText: contextDecision.aggregatedText,
+      currentTopic: contextDecision.currentTopic
+    });
+
+    assert.equal(manualResult.bestMatch?.id, expectedCardId, query);
+    assert.equal(liveResult.bestMatch?.id, expectedCardId, query);
+    assert.equal(liveResult.bestMatch?.id, manualResult.bestMatch?.id, query);
+  }
+});

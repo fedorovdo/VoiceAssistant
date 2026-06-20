@@ -21,8 +21,11 @@ export interface KnowledgeCandidateDebug {
   cardId: string;
   title: string;
   score: number;
+  specificityBonus: number;
   accepted: boolean;
+  selected: boolean;
   matchedAlias?: string;
+  selectionReason?: string;
   rejectionReason: KnowledgeCandidateRejectionReason;
 }
 
@@ -32,6 +35,7 @@ export interface KnowledgeCardLookupResult {
   normalizedQuery: string;
   debugCandidates: KnowledgeCandidateDebug[];
   scoreThreshold: number;
+  selectionReason?: string;
 }
 
 const knowledgeScoreThreshold = 100;
@@ -151,6 +155,11 @@ const contextMarkers = [
   "active directory", " ad ", "windows", "powershell", "dns", "dhcp", "tcp", "udp", "firewall",
   "network", "сеть", "memory", "память"
 ];
+const actionMarkers = [
+  "добавить", "создать", "удалить", "найти", "проверить", "изменить",
+  "заблокировать", "разблокировать", "сбросить пароль"
+];
+const actionSpecificityBonus = 24;
 
 export function findKnowledgeCards(text: string): KnowledgeCard[] {
   return lookupKnowledgeCards(text).matches;
@@ -174,26 +183,36 @@ export function lookupKnowledgeCards(text: string): KnowledgeCardLookupResult {
     .filter((result) => result.accepted)
     .slice(0, 2)
     .map((result) => result.knowledgeCard);
+  const selectedResult = ranked.find((result) => result.accepted);
+  const selectedCardId = selectedResult?.knowledgeCard.id;
+  const selectionReason = selectedResult
+    ? describeSelection(selectedResult.matchedAlias, normalizedQuery, selectedResult.specificityBonus)
+    : undefined;
 
   return {
     matches,
     bestMatch: matches[0],
     normalizedQuery,
-    debugCandidates: ranked.slice(0, 5).map(({ knowledgeCard, score, accepted, matchedAlias, rejectionReason }) => ({
+    debugCandidates: ranked.slice(0, 5).map(({ knowledgeCard, score, specificityBonus, accepted, matchedAlias, rejectionReason }) => ({
       cardId: knowledgeCard.id,
       title: knowledgeCard.title,
       score,
+      specificityBonus,
       accepted,
+      selected: knowledgeCard.id === selectedCardId,
       matchedAlias,
+      selectionReason: knowledgeCard.id === selectedCardId ? selectionReason : undefined,
       rejectionReason
     })),
-    scoreThreshold: knowledgeScoreThreshold
+    scoreThreshold: knowledgeScoreThreshold,
+    selectionReason
   };
 }
 
 function scoreCard(knowledgeCard: KnowledgeCard, text: string): Omit<KnowledgeCandidateDebug, "cardId" | "title"> {
   const candidates = [knowledgeCard.title, ...knowledgeCard.aliases].map(normalize);
   let acceptedScore = 0;
+  let acceptedSpecificityBonus = 0;
   let matchedAlias: string | undefined;
   let rejectedAmbiguous = false;
 
@@ -206,27 +225,54 @@ function scoreCard(knowledgeCard: KnowledgeCard, text: string): Omit<KnowledgeCa
 
     const exactBonus = text === candidate ? 40 : 0;
     const titleBonus = candidate === normalize(knowledgeCard.title) && candidate.length >= 6 ? 12 : 0;
-    const score = knowledgeScoreThreshold + candidate.length + exactBonus + titleBonus;
+    const specificityBonus = getActionSpecificityBonus(text, candidate);
+    const score = knowledgeScoreThreshold + candidate.length + exactBonus + titleBonus + specificityBonus;
     if (score > acceptedScore) {
       acceptedScore = score;
+      acceptedSpecificityBonus = specificityBonus;
       matchedAlias = candidate;
     }
   }
 
   if (acceptedScore >= knowledgeScoreThreshold) {
-    return { score: acceptedScore, accepted: true, matchedAlias, rejectionReason: "accepted" };
+    return {
+      score: acceptedScore,
+      specificityBonus: acceptedSpecificityBonus,
+      accepted: true,
+      matchedAlias,
+      selected: false,
+      rejectionReason: "accepted"
+    };
   }
 
   const similarityScore = Math.min(knowledgeScoreThreshold - 1, Math.round(bestTokenCoverage(text, candidates) * 99));
   return {
     score: similarityScore,
+    specificityBonus: 0,
     accepted: false,
+    selected: false,
     rejectionReason: rejectedAmbiguous
       ? "ambiguous_without_context"
       : similarityScore > 0
         ? "below_threshold"
         : "no_alias_phrase"
   };
+}
+
+function getActionSpecificityBonus(text: string, candidate: string): number {
+  return actionMarkers.some((marker) => text.includes(marker) && candidate.includes(marker))
+    ? actionSpecificityBonus
+    : 0;
+}
+
+function describeSelection(
+  matchedAlias: string | undefined,
+  normalizedQuery: string,
+  specificityBonus: number
+): string {
+  if (specificityBonus > 0) return "specific_action_alias";
+  if (matchedAlias === normalizedQuery) return "exact_alias";
+  return "alias_phrase";
 }
 
 function bestTokenCoverage(text: string, candidates: string[]): number {

@@ -90,6 +90,7 @@ interface LiveDecisionDiagnostics {
   localScoreThreshold: number;
   localTopicContextAdded: boolean;
   localQuerySource?: string;
+  localSelectionReason?: string;
   sensitivity: LiveAssistSensitivity;
   decisionSource: LiveContextDecision["decisionSource"];
   pendingRequestText?: string;
@@ -817,6 +818,7 @@ export function App() {
                 <span>порог совпадения</span><code>{liveDecisionDiagnostics?.localScoreThreshold ?? "—"}</code>
                 <span>контекст темы добавлен</span><code>{String(liveDecisionDiagnostics?.localTopicContextAdded ?? false)}</code>
                 <span>источник local lookup</span><code>{liveDecisionDiagnostics?.localQuerySource ?? "—"}</code>
+                <span>причина выбора карточки</span><code>{liveDecisionDiagnostics?.localSelectionReason ?? "—"}</code>
                 <span>кандидаты local lookup</span><code>{formatLocalDebugCandidates(liveDecisionDiagnostics?.localDebugCandidates ?? [])}</code>
                 <span>ответ показан</span><code>{String(liveDecisionDiagnostics?.answerRendered ?? false)}</code>
                 <span>решение</span><code>{liveDecisionDiagnostics?.decision ?? "—"}</code>
@@ -1010,7 +1012,8 @@ function createLiveDecisionDiagnostics(
     localDebugCandidates: localLookup?.debugCandidates ?? [],
     localScoreThreshold: localLookup?.scoreThreshold ?? 0,
     localTopicContextAdded: localLookup?.topicContextAdded ?? false,
-    localQuerySource: localLookup?.querySource
+    localQuerySource: localLookup?.querySource,
+    localSelectionReason: localLookup?.selectionReason
   };
 }
 
@@ -1018,7 +1021,11 @@ function formatLocalDebugCandidates(candidates: KnowledgeCandidateDebug[]): stri
   if (candidates.length === 0) return "—";
   return candidates
     .slice(0, 5)
-    .map((candidate) => `${candidate.title}: ${candidate.score} (${candidate.rejectionReason})`)
+    .map((candidate) => {
+      const bonus = candidate.specificityBonus > 0 ? `, specificity +${candidate.specificityBonus}` : "";
+      const selected = candidate.selected ? `, selected: ${candidate.selectionReason ?? "alias"}` : "";
+      return `${candidate.title}: ${candidate.score}${bonus} (${candidate.rejectionReason}${selected})`;
+    })
     .join("\n");
 }
 

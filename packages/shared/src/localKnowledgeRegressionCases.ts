@@ -33,8 +33,11 @@ export const localKnowledgeRegressionCases: LocalKnowledgeRegressionCase[] = [
   { query: "Как отменить последний commit?", expectedCategory: "git" },
   { query: "Что такое pull request?", expectedCategory: "git" },
 
-  { query: "Как добавить пользователя в группу Active Directory?", expectedCategory: "active-directory" },
-  { query: "Как проверить пользователя AD?", expectedCategory: "active-directory", expectedCommandFragment: "Get-ADUser" },
+  { query: "Как добавить пользователя в Active Directory?", expectedCardId: "active-directory-create-user", expectedCommandFragment: "New-ADUser" },
+  { query: "Как создать пользователя в AD?", expectedCardId: "active-directory-create-user", expectedCommandFragment: "New-ADUser" },
+  { query: "Что такое Active Directory?", expectedCardId: "active-directory", expectedCommandFragment: "Get-ADDomain" },
+  { query: "Как добавить пользователя в группу Active Directory?", expectedCardId: "active-directory-add-user-to-group", expectedCommandFragment: "Add-ADGroupMember" },
+  { query: "Как проверить пользователя AD?", expectedCardId: "ad-user-lookup", expectedCommandFragment: "Get-ADUser" },
   { query: "Как обновить групповые политики?", expectedCardId: "ad-gpupdate", expectedCommandFragment: "gpupdate" },
 
   { query: "Что такое NAT?", expectedCardId: "network-nat" },
@@ -45,5 +48,7 @@ export const localKnowledgeRegressionCases: LocalKnowledgeRegressionCase[] = [
 export const localKnowledgeNegativeRegressionCases = [
   "Как приготовить чай?",
   "Из чего состоит дом?",
-  "Как выбрать подарок?"
+  "Как выбрать подарок?",
+  "как добавить пользователя на сайт",
+  "как создать пользователя в приложении"
 ];

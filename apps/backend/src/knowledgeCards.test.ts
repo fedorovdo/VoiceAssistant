@@ -175,6 +175,41 @@ test("production lookup covers natural sudo assignment and Docker layer wording"
   }
 });
 
+test("production lookup routes Active Directory user actions to focused cards", () => {
+  const cases = [
+    ["Как добавить пользователя в Active Directory?", "active-directory-create-user"],
+    ["Как создать пользователя в AD?", "active-directory-create-user"],
+    ["Что такое Active Directory?", "active-directory"],
+    ["Как проверить пользователя Active Directory?", "ad-user-lookup"],
+    ["Как добавить пользователя в группу Active Directory?", "active-directory-add-user-to-group"]
+  ] as const;
+
+  for (const [query, expectedCardId] of cases) {
+    assert.equal(lookupLocalKnowledge(query).bestMatch?.id, expectedCardId, query);
+  }
+
+  const creation = lookupLocalKnowledge("Как добавить пользователя в Active Directory?");
+  const selectedCandidate = creation.debugCandidates.find((candidate) => candidate.selected);
+  assert.equal(creation.selectionReason, "specific_action_alias");
+  assert.equal(selectedCandidate?.cardId, "active-directory-create-user");
+  assert.equal(selectedCandidate?.specificityBonus, 24);
+
+  const definition = lookupLocalKnowledge("Что такое Active Directory?");
+  assert.equal(definition.bestMatch?.id, "active-directory");
+  assert.equal(definition.debugCandidates.find((candidate) => candidate.selected)?.specificityBonus, 0);
+});
+
+test("Active Directory creation card includes safe GUI and PowerShell guidance", () => {
+  const creationCard = lookupLocalKnowledge("new-aduser").bestMatch;
+  assert.ok(creationCard);
+  assert.equal(creationCard.id, "active-directory-create-user");
+  for (const command of ["New-ADUser", "Set-ADAccountPassword", "Enable-ADAccount", "Add-ADGroupMember"]) {
+    assert.ok(creationCard.commands.some((entry) => entry.includes(command)), command);
+  }
+  assert.ok(creationCard.bullets.some((bullet) => bullet.includes("OU")));
+  assert.ok(creationCard.bullets.some((bullet) => bullet.includes("SamAccountName")));
+});
+
 test("new technical aliases stay conservative for unrelated phrases", () => {
   for (const query of [
     "как добавить сахар",
@@ -185,6 +220,7 @@ test("new technical aliases stay conservative for unrelated phrases", () => {
     "найти пользователя сайта",
     "порт вина",
     "как добавить пользователя на сайт",
+    "как создать пользователя в приложении",
     "что такое слой пирога",
     "как добавить человека в чат"
   ]) {
