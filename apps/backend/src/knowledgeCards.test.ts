@@ -151,6 +151,30 @@ test("production lookup covers repaired sudo, Docker, Git, AD, and port phrases"
   }
 });
 
+test("production lookup covers natural sudo assignment and Docker layer wording", () => {
+  const cases = [
+    ["Как добавить пользователя в sudo?", "linux-add-user-sudo"],
+    ["Добавить пользователя в sudo", "linux-add-user-sudo"],
+    ["Как добавить юзера в sudo?", "linux-add-user-sudo"],
+    ["Добавить юзера в группу sudo", "linux-add-user-sudo"],
+    ["Как включить пользователя в sudo?", "linux-add-user-sudo"],
+    ["Как дать пользователю sudo?", "linux-add-user-sudo"],
+    ["Как добавить пользователя в wheel?", "linux-add-user-sudo"],
+    ["Добавить пользователя в группу wheel", "linux-add-user-sudo"],
+    ["Что такое слой докера?", "docker-image-layers"],
+    ["Что такое слои докера?", "docker-image-layers"],
+    ["Как устроен слой докера?", "docker-image-layers"],
+    ["Из чего состоит слой докера?", "docker-image-layers"],
+    ["Как посмотреть слои докера?", "docker-image-layers"],
+    ["Слои образа докера", "docker-image-layers"],
+    ["Слой Docker-образа", "docker-image-layers"]
+  ] as const;
+
+  for (const [query, expectedCardId] of cases) {
+    assert.equal(lookupLocalKnowledge(query).bestMatch?.id, expectedCardId, query);
+  }
+});
+
 test("new technical aliases stay conservative for unrelated phrases", () => {
   for (const query of [
     "как добавить сахар",
@@ -159,7 +183,10 @@ test("new technical aliases stay conservative for unrelated phrases", () => {
     "отменить встречу",
     "запрос в магазин",
     "найти пользователя сайта",
-    "порт вина"
+    "порт вина",
+    "как добавить пользователя на сайт",
+    "что такое слой пирога",
+    "как добавить человека в чат"
   ]) {
     assert.equal(lookupLocalKnowledge(query).bestMatch, undefined, query);
   }

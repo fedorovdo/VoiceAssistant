@@ -12,6 +12,7 @@ export const localKnowledgeRegressionCases: LocalKnowledgeRegressionCase[] = [
   { query: "Как посмотреть открытые порты?", expectedCardId: "linux-open-ports", expectedCommandFragment: "ss -lntup" },
   { query: "Как дать права в Linux?", expectedCardId: "linux-permissions-overview", expectedCommandFragment: "chmod" },
   { query: "Как добавить пользователю sudo?", expectedCardId: "linux-add-user-sudo", expectedCommandFragment: "usermod -aG sudo" },
+  { query: "Как добавить пользователя в sudo?", expectedCardId: "linux-add-user-sudo", expectedCommandFragment: "usermod -aG sudo" },
   { query: "Как проверить безопасность Linux?", expectedCardId: "linux-security-quick-check", expectedCommandFragment: "ss -lntup" },
 
   { query: "Что такое Docker?", expectedCardId: "docker-overview", expectedCommandFragment: "docker info" },
@@ -19,6 +20,7 @@ export const localKnowledgeRegressionCases: LocalKnowledgeRegressionCase[] = [
   { query: "Что такое Dockerfile?", expectedCardId: "dockerfile", expectedCommandFragment: "docker build" },
   { query: "Из чего состоит Dockerfile?", expectedCardId: "dockerfile", expectedCommandFragment: "docker build" },
   { query: "Что такое слой Docker?", expectedCardId: "docker-image-layers", expectedCommandFragment: "docker history" },
+  { query: "Что такое слой докера?", expectedCardId: "docker-image-layers", expectedCommandFragment: "docker history" },
   { query: "Как посмотреть логи контейнера?", expectedCardId: "docker-logs-follow", expectedCommandFragment: "docker logs" },
 
   { query: "Что такое Kubernetes?", expectedCardId: "kubernetes-overview", expectedCommandFragment: "kubectl cluster-info" },

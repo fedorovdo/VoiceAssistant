@@ -26,6 +26,9 @@ const dockerComposeContext = /(?:docker|докер|контейнер|container|
 const rules: NormalizationRule[] = [
   rule("(?:сервис\\s+кубернетес|кубернетес\\s+сервис)", "Kubernetes service", "Kubernetes service"),
   rule("(?:докер\\s+(?:образ|имидж)|образ\\s+докер)", "Docker image", "Docker image"),
+  rule("слои\\s+докера", "Docker layers", "Docker layers"),
+  rule("слой\\s+докера", "Docker layer", "Docker layer"),
+  rule("образ(?:а)?\\s+докера", "Docker image", "Docker image"),
   rule("(?:контейнер\\s+докер|докер\\s+контейнер)", "Docker container", "Docker container"),
   rule("(?:(?:докер|docker)[\\s-]*(?:файл(?:е)?|file)|докерфайл(?:е)?)", "Dockerfile", "Dockerfile"),
   repair("что\\s+стоит\\s+dockerfile", "что такое Dockerfile"),

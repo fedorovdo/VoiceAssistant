@@ -17,6 +17,14 @@ test("normalizeTechnicalTerms restores Docker image wording", () => {
   assert.deepEqual(result.replacements.map((replacement) => replacement.to), ["Docker image"]);
 });
 
+test("normalizeTechnicalTerms restores Docker layer genitive wording conservatively", () => {
+  assert.equal(normalizeTechnicalTerms("Что такое слой докера?").text, "Что такое Docker layer?");
+  assert.equal(normalizeTechnicalTerms("Как посмотреть слои докера?").text, "Как посмотреть Docker layers?");
+  assert.equal(normalizeTechnicalTerms("Слои образа докера").text, "Слои Docker image");
+  assert.equal(normalizeTechnicalTerms("что такое слой пирога").text, "что такое слой пирога");
+  assert.equal(normalizeTechnicalTerms("Как добавить пользователя в sudo?").text, "Как добавить пользователя в sudo?");
+});
+
 test("normalizeTechnicalTerms restores Dockerfile variants and repairs STT phrases", () => {
   for (const variant of [
     "докер файл",

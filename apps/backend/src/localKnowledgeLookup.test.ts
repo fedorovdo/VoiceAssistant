@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   ConversationContextBuffer,
   lookupLocalKnowledge,
+  normalizeTechnicalTerms,
   resolveLiveAssistDecision
 } from "@voiceassistant/shared";
 
@@ -80,5 +81,26 @@ test("Manual and Live production lookup return the same card for normalized text
     assert.equal(liveResult.bestMatch?.id, manualResult.bestMatch?.id, query);
     assert.equal(policy.action, "answer", query);
     assert.equal(policy.sourceResolution, "local", query);
+  }
+});
+
+test("Manual and Live lookup agree for natural sudo and Docker layer phrases", () => {
+  const cases = [
+    ["Как добавить пользователя в sudo?", "linux-add-user-sudo"],
+    ["Что такое слой докера?", "docker-image-layers"]
+  ] as const;
+
+  for (const [query, expectedCardId] of cases) {
+    const normalizedText = normalizeTechnicalTerms(query).text;
+    const contextDecision = new ConversationContextBuffer().add(normalizedText, 1_000, "balanced");
+    const manualResult = lookupLocalKnowledge(normalizedText);
+    const liveResult = lookupLocalKnowledge(normalizedText, {
+      aggregatedText: contextDecision.aggregatedText,
+      currentTopic: contextDecision.currentTopic
+    });
+
+    assert.equal(manualResult.bestMatch?.id, expectedCardId, query);
+    assert.equal(liveResult.bestMatch?.id, expectedCardId, query);
+    assert.equal(liveResult.bestMatch?.id, manualResult.bestMatch?.id, query);
   }
 });
