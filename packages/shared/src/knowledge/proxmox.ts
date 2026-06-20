@@ -1,0 +1,24 @@
+import type { KnowledgeCard, KnowledgeTopicPack } from "./types.js";
+import { defineCard } from "./types.js";
+
+export const proxmoxTopicId = "proxmox" as const;
+export const proxmoxDisplayName = "Proxmox";
+
+export const proxmoxKnowledgeCards: KnowledgeCard[] = [
+  defineCard("proxmox-version", "Версия Proxmox VE: pveversion", ["pveversion", "версия proxmox", "check proxmox version", "пакеты pve"], "proxmox", "Показывает версию Proxmox VE и установленных компонентов.", ["-v выводит версии основных PVE-пакетов.", "Полезно перед обновлением и при сравнении nodes cluster."], ["pveversion", "pveversion -v"], ["proxmox", "packages", "update"]),
+  defineCard("proxmox-storage-status", "Статус хранилищ Proxmox: pvesm status", ["pvesm status", "как посмотреть хранилища proxmox", "proxmox storage status", "проверить storage proxmox"], "proxmox", "Показывает доступность, тип, емкость и заполнение настроенных Proxmox storages.", ["Inactive storage может блокировать запуск VM, backup и migration.", "Проверяйте также mount, сеть и конфигурацию storage."], ["pvesm status", "pvesm list STORAGE", "cat /etc/pve/storage.cfg"], ["storage", "backup", "cluster"]),
+  defineCard("proxmox-qm-list", "Список виртуальных машин Proxmox", ["qm list", "список vm proxmox", "list proxmox vms", "виртуальные машины proxmox"], "proxmox", "Показывает QEMU/KVM virtual machines, VMID, имя, статус и память.", ["Для деталей конкретной VM используйте qm status и qm config.", "VMID уникален в cluster."], ["qm list", "qm status VMID", "qm config VMID"], ["vm", "qemu", "proxmox"]),
+  defineCard("proxmox-qm-status", "Статус VM Proxmox", ["qm status", "статус vm proxmox", "check proxmox vm status", "qm config"], "proxmox", "Проверяет состояние и конфигурацию конкретной QEMU virtual machine.", ["status показывает running/stopped.", "config помогает проверить disks, network и boot settings."], ["qm status VMID", "qm config VMID"], ["vm", "qemu", "troubleshooting"]),
+  defineCard("proxmox-qm-lifecycle", "Запуск и остановка VM Proxmox", ["qm start stop", "qm start", "qm stop", "запустить vm proxmox", "остановить vm proxmox"], "proxmox", "Управляет жизненным циклом QEMU virtual machine по VMID.", ["shutdown запрашивает корректное завершение через guest OS.", "stop — жесткая остановка, используйте ее осторожно."], ["qm start VMID", "qm shutdown VMID", "qm stop VMID", "qm reboot VMID"], ["vm", "qemu", "lifecycle"]),
+  defineCard("proxmox-pct-list", "Список LXC-контейнеров Proxmox", ["pct list", "список lxc proxmox", "proxmox containers list", "контейнеры proxmox"], "proxmox", "Показывает LXC containers, CTID, статус и имя.", ["Для деталей используйте pct status и pct config.", "LXC отличается от Docker-контейнеров и использует системную виртуализацию."], ["pct list", "pct status CTID", "pct config CTID"], ["lxc", "container", "proxmox"]),
+  defineCard("proxmox-pct-status", "Статус LXC-контейнера Proxmox", ["pct status", "статус lxc proxmox", "check proxmox container", "pct start stop"], "proxmox", "Проверяет и управляет состоянием LXC container.", ["pct enter открывает shell работающего контейнера.", "При ошибке запуска смотрите task log и system journal node."], ["pct status CTID", "pct start CTID", "pct shutdown CTID", "pct enter CTID"], ["lxc", "container", "logs"]),
+  defineCard("proxmox-vzdump", "Резервное копирование Proxmox: vzdump", ["vzdump basics", "vzdump", "backup proxmox vm", "резервная копия proxmox"], "proxmox", "Создает backup VM или LXC container на выбранном storage.", ["Mode snapshot уменьшает downtime при поддерживаемом storage.", "Всегда проверяйте свободное место и восстановление backup."], ["vzdump VMID --storage STORAGE --mode snapshot", "pvesm list STORAGE --content backup"], ["backup", "storage", "restore"]),
+  defineCard("proxmox-cluster-status", "Статус Proxmox cluster", ["pvecm status", "check proxmox cluster status", "статус кластера proxmox", "proxmox quorum"], "proxmox", "Показывает membership, quorum и состояние Corosync cluster.", ["Без quorum часть операций cluster блокируется для защиты конфигурации.", "Проверяйте связь nodes и Corosync links."], ["pvecm status", "pvecm nodes", "journalctl -u corosync -b"], ["cluster", "quorum", "corosync"]),
+  defineCard("proxmox-node-resources", "Ресурсы Proxmox node", ["check proxmox node resources", "proxmox node resources", "нагрузка proxmox", "ресурсы ноды proxmox", "cpu memory proxmox"], "proxmox", "Проверяет CPU, память, load, disks и активные guests на Proxmox node.", ["Сопоставляйте host usage с VM/CT consumption.", "Для storage latency дополнительно смотрите iostat."], ["pvesh get /nodes/$(hostname)/status", "top", "free -h", "df -h", "iostat -xz 1"], ["node", "cpu", "memory", "storage"])
+];
+
+export const proxmoxTopicPack: KnowledgeTopicPack = {
+  id: proxmoxTopicId,
+  displayName: proxmoxDisplayName,
+  cards: proxmoxKnowledgeCards
+};

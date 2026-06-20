@@ -149,6 +149,16 @@ For Russian speech, accepted STT fragments also pass through a conservative tech
 
 VoiceAssistant includes an expanded in-memory practical command reference for Linux troubleshooting, Docker and Docker Compose, Kubernetes, networking, Windows and Active Directory, Proxmox, and Git. It covers service and log diagnostics, filesystems and permissions, Linux sudo/sudoers, user groups, firewall and SSH security checks, containers and images, kubectl troubleshooting, port and DNS checks, Group Policy and AD replication, virtualization storage, backups, and everyday version-control commands. Cards contain concise Russian explanations, practical bullets, commands, Russian and English aliases, and related terms.
 
+The catalog is organized into modular topic packs under `packages/shared/src/knowledge/`: Linux, Docker, Kubernetes, networking, Active Directory, Git, and Proxmox. The central registry validates pack metadata and unique card IDs, then preserves the established global card order used by local matching.
+
+To add a local knowledge card safely:
+
+1. Choose the matching topic module in `packages/shared/src/knowledge/`.
+2. Add the card without reusing an existing ID.
+3. Add a canonical query to `localKnowledgeRegressionCases.ts`.
+4. Run `npm run test:knowledge`.
+5. Run `npm run verify:win`.
+
 Broad practical questions such as `Как дать права в Linux?` are answered locally with a short guide to `chmod`, `chown`, `sudo`, and user groups, without requiring an API key.
 
 Dockerfile questions such as `Что такое Dockerfile?` and common Russian STT variants are normalized and answered from the same local reference.
