@@ -120,9 +120,59 @@ test("Manual and Live lookup agree on focused Active Directory user actions", ()
       aggregatedText: contextDecision.aggregatedText,
       currentTopic: contextDecision.currentTopic
     });
+    assert.equal(manualResult.bestMatch?.id, expectedCardId, query);
+    assert.equal(liveResult.bestMatch?.id, expectedCardId, query);
+    assert.equal(liveResult.bestMatch?.id, manualResult.bestMatch?.id, query);
+  }
+});
+
+test("Manual and Live lookup agree on Linux privilege, permission, and password actions", () => {
+  const cases = [
+    ["Как повысить права пользователя в Linux?", "linux-add-user-sudo"],
+    ["Как повысить привилегии пользователя?", "linux-add-user-sudo"],
+    ["Как дать пользователю административные права?", "linux-add-user-sudo"],
+    ["Как сделать пользователя sudo?", "linux-add-user-sudo"],
+    ["Как добавить пользователя в sudo?", "linux-add-user-sudo"],
+    ["Как добавить пользователя в wheel?", "linux-add-user-sudo"],
+    ["Как дать пользователю root-права?", "linux-add-user-sudo"],
+    ["Как дать пользователю права администратора в Linux?", "linux-add-user-sudo"],
+    ["Как повысить права файлов?", "linux-file-directory-permissions"],
+    ["Как повысить права файла?", "linux-file-directory-permissions"],
+    ["Как повысить права файлов в Linux?", "linux-file-directory-permissions"],
+    ["Как изменить права файла?", "linux-file-directory-permissions"],
+    ["Как изменить права директории?", "linux-file-directory-permissions"],
+    ["Как повысить права директории?", "linux-file-directory-permissions"],
+    ["Как дать права на папку?", "linux-file-directory-permissions"],
+    ["Как дать права на файл?", "linux-file-directory-permissions"],
+    ["Как сделать файл исполняемым?", "linux-chmod"],
+    ["Как изменить владельца файла?", "linux-file-directory-permissions"],
+    ["Как поменять пароль в Linux?", "linux-change-password"],
+    ["Как изменить пароль пользователя?", "linux-change-password"],
+    ["Как сменить пароль Linux?", "linux-change-password"],
+    ["Как поменять пароль пользователю?", "linux-change-password"],
+    ["passwd", "linux-change-password"],
+    ["сбросить пароль пользователя Linux", "linux-change-password"],
+    ["сменить пароль root", "linux-change-password"]
+  ] as const;
+
+  for (const [query, expectedCardId] of cases) {
+    const contextDecision = new ConversationContextBuffer().add(query, 1_000, "balanced");
+    const manualResult = lookupLocalKnowledge(query);
+    const liveResult = lookupLocalKnowledge(query, {
+      aggregatedText: contextDecision.aggregatedText,
+      currentTopic: contextDecision.currentTopic
+    });
+    const policy = resolveLiveAssistDecision({
+      contextDecision,
+      answerSourceMode: "local-only",
+      hasLocalMatch: liveResult.matches.length > 0,
+      hasApiKey: false,
+      answerMode: "short"
+    });
 
     assert.equal(manualResult.bestMatch?.id, expectedCardId, query);
     assert.equal(liveResult.bestMatch?.id, expectedCardId, query);
     assert.equal(liveResult.bestMatch?.id, manualResult.bestMatch?.id, query);
+    assert.equal(policy.action, "answer", query);
   }
 });

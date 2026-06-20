@@ -210,6 +210,68 @@ test("Active Directory creation card includes safe GUI and PowerShell guidance",
   assert.ok(creationCard.bullets.some((bullet) => bullet.includes("SamAccountName")));
 });
 
+test("production lookup routes Linux privilege, permission, and password actions", () => {
+  const cases = [
+    ["Как повысить права пользователя в Linux?", "linux-add-user-sudo"],
+    ["Как повысить привилегии пользователя?", "linux-add-user-sudo"],
+    ["Как дать пользователю административные права?", "linux-add-user-sudo"],
+    ["Как сделать пользователя sudo?", "linux-add-user-sudo"],
+    ["Как добавить пользователя в sudo?", "linux-add-user-sudo"],
+    ["Как добавить пользователя в wheel?", "linux-add-user-sudo"],
+    ["Как дать пользователю root-права?", "linux-add-user-sudo"],
+    ["Как дать пользователю права администратора в Linux?", "linux-add-user-sudo"],
+    ["Как повысить права файлов?", "linux-file-directory-permissions"],
+    ["Как повысить права файла?", "linux-file-directory-permissions"],
+    ["Как повысить права файлов в Linux?", "linux-file-directory-permissions"],
+    ["Как изменить права файла?", "linux-file-directory-permissions"],
+    ["Как изменить права директории?", "linux-file-directory-permissions"],
+    ["Как повысить права директории?", "linux-file-directory-permissions"],
+    ["Как дать права на папку?", "linux-file-directory-permissions"],
+    ["Как дать права на файл?", "linux-file-directory-permissions"],
+    ["Как сделать файл исполняемым?", "linux-chmod"],
+    ["Как изменить владельца файла?", "linux-file-directory-permissions"],
+    ["Как поменять пароль в Linux?", "linux-change-password"],
+    ["Как изменить пароль пользователя?", "linux-change-password"],
+    ["Как сменить пароль Linux?", "linux-change-password"],
+    ["Как поменять пароль пользователю?", "linux-change-password"],
+    ["passwd", "linux-change-password"],
+    ["сбросить пароль пользователя Linux", "linux-change-password"],
+    ["сменить пароль root", "linux-change-password"]
+  ] as const;
+
+  for (const [query, expectedCardId] of cases) {
+    assert.equal(lookupLocalKnowledge(query).bestMatch?.id, expectedCardId, query);
+  }
+
+  for (const query of [
+    "Как повысить права пользователя в Linux?",
+    "Как повысить права файлов в Linux?",
+    "Как поменять пароль в Linux?"
+  ]) {
+    const result = lookupLocalKnowledge(query);
+    const selected = result.debugCandidates.find((candidate) => candidate.selected);
+    assert.ok(selected?.specificityBonus, query);
+    assert.equal(selected.selectionReason, "specific_action_alias", query);
+  }
+});
+
+test("focused Linux permission cards contain practical and cautious commands", () => {
+  const fileCard = lookupLocalKnowledge("Как повысить права файла?").bestMatch;
+  assert.ok(fileCard);
+  assert.equal(fileCard.id, "linux-file-directory-permissions");
+  for (const command of ["ls -l FILE", "chmod +x script.sh", "chmod 640 FILE", "chmod 750 DIRECTORY", "chown USER:GROUP FILE", "chown -R USER:GROUP DIRECTORY"]) {
+    assert.ok(fileCard.commands.includes(command), command);
+  }
+  assert.ok(fileCard.bullets.some((bullet) => bullet.includes("777")));
+
+  const passwordCard = lookupLocalKnowledge("Как поменять пароль в Linux?").bestMatch;
+  assert.ok(passwordCard);
+  assert.equal(passwordCard.id, "linux-change-password");
+  for (const command of ["passwd", "sudo passwd USER", "sudo passwd root", "chage -l USER", "sudo chage -d 0 USER"]) {
+    assert.ok(passwordCard.commands.includes(command), command);
+  }
+});
+
 test("new technical aliases stay conservative for unrelated phrases", () => {
   for (const query of [
     "как добавить сахар",
@@ -221,6 +283,11 @@ test("new technical aliases stay conservative for unrelated phrases", () => {
     "порт вина",
     "как добавить пользователя на сайт",
     "как создать пользователя в приложении",
+    "как повысить зарплату",
+    "как повысить громкость",
+    "как поменять пароль на сайте",
+    "как изменить права человека",
+    "как дать права персонажу в игре",
     "что такое слой пирога",
     "как добавить человека в чат"
   ]) {

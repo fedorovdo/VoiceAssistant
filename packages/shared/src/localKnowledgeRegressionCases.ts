@@ -13,6 +13,10 @@ export const localKnowledgeRegressionCases: LocalKnowledgeRegressionCase[] = [
   { query: "Как дать права в Linux?", expectedCardId: "linux-permissions-overview", expectedCommandFragment: "chmod" },
   { query: "Как добавить пользователю sudo?", expectedCardId: "linux-add-user-sudo", expectedCommandFragment: "usermod -aG sudo" },
   { query: "Как добавить пользователя в sudo?", expectedCardId: "linux-add-user-sudo", expectedCommandFragment: "usermod -aG sudo" },
+  { query: "Как повысить права пользователя в Linux?", expectedCardId: "linux-add-user-sudo", expectedCommandFragment: "usermod -aG sudo" },
+  { query: "Как повысить права файлов в Linux?", expectedCardId: "linux-file-directory-permissions", expectedCommandFragment: "chmod 640" },
+  { query: "Как повысить права директории?", expectedCardId: "linux-file-directory-permissions", expectedCommandFragment: "chmod 750" },
+  { query: "Как поменять пароль в Linux?", expectedCardId: "linux-change-password", expectedCommandFragment: "sudo passwd USER" },
   { query: "Как проверить безопасность Linux?", expectedCardId: "linux-security-quick-check", expectedCommandFragment: "ss -lntup" },
 
   { query: "Что такое Docker?", expectedCardId: "docker-overview", expectedCommandFragment: "docker info" },
@@ -50,5 +54,10 @@ export const localKnowledgeNegativeRegressionCases = [
   "Из чего состоит дом?",
   "Как выбрать подарок?",
   "как добавить пользователя на сайт",
-  "как создать пользователя в приложении"
+  "как создать пользователя в приложении",
+  "как повысить зарплату",
+  "как повысить громкость",
+  "как поменять пароль на сайте",
+  "как изменить права человека",
+  "как дать права персонажу в игре"
 ];

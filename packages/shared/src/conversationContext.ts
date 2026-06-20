@@ -87,7 +87,7 @@ const topicTerms: Record<TechnicalTopic, string[]> = {
   "DNS/DHCP": ["dns", "dhcp", "nslookup", "dig", "dns-запись", "dns запись", "dhcp lease", "аренда dhcp"],
   Proxmox: ["proxmox", "pve", "pvesm", "vzdump", "qm command", "qm list"],
   Docker: ["docker", "dockerfile", "docker image", "container", "registry", "контейнер", "образ docker"],
-  Linux: ["linux", "systemctl", "journalctl", "chmod", "chown", "fstab", "bash", "df -h", "free -h", "ip addr", "ip route", "sudo", "sudoers", "visudo", "usermod", "ufw", "firewall", "firewalld", "iptables", "sshd", "authorized_keys", "selinux"],
+  Linux: ["linux", "systemctl", "journalctl", "chmod", "chown", "passwd", "chage", "fstab", "bash", "df -h", "free -h", "ip addr", "ip route", "sudo", "sudoers", "wheel", "visudo", "usermod", "ufw", "firewall", "firewalld", "iptables", "sshd", "authorized_keys", "selinux"],
   Networking: ["networking", "network", "nat", "port", "ping", "traceroute", "tracert", "netcat", "маршрут", "сеть", "порт"],
   Git: ["git", "commit", "branch", "merge", "rebase", "pull request", "репозиторий", "коммит", "ветка git"]
 };
@@ -123,7 +123,9 @@ const explanatoryIntentPatterns = [
 ];
 
 const commandIntentPatterns = [
-  /как (?:проверить|настроить|посмотреть|узнать|найти|запустить|остановить|перезапустить|сделать|собрать|пересобрать)/i,
+  /как (?:проверить|настроить|посмотреть|узнать|найти|запустить|остановить|перезапустить|сделать|собрать|пересобрать|повысить|изменить|поменять|сменить|дать|добавить)/i,
+  /(?:сбросить|сменить)\s+парол/i,
+  /^\s*(?:passwd|chage)\b/i,
   /(?:какая|какой|какую) команд[ауой]/i,
   /команда для/i,
   /команд(?:а|ы)\s+(?:для\s+)?[a-zа-я]/i,
