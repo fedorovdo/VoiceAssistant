@@ -7,6 +7,7 @@ import type {
   AssistantAnswerResponse,
   DesktopSettings,
   KnowledgeCard,
+  KnowledgeCandidateDebug,
   LayoutMode,
   LiveAssistAction,
   LiveAssistIntent,
@@ -21,7 +22,7 @@ import type {
 } from "@voiceassistant/shared";
 import {
   ConversationContextBuffer,
-  findLocalKnowledgeCards,
+  lookupLocalKnowledge,
   migrateDesktopSettings,
   normalizeTechnicalTerms,
   resolveLiveAssistDecision,
@@ -84,6 +85,11 @@ interface LiveDecisionDiagnostics {
   matchedCardId?: string;
   matchedCardTitle?: string;
   answerRendered: boolean;
+  localNormalizedQuery: string;
+  localDebugCandidates: KnowledgeCandidateDebug[];
+  localScoreThreshold: number;
+  localTopicContextAdded: boolean;
+  localQuerySource?: string;
   sensitivity: LiveAssistSensitivity;
   decisionSource: LiveContextDecision["decisionSource"];
   pendingRequestText?: string;
@@ -348,12 +354,13 @@ export function App() {
     if (contextDecision.shouldAnswer && shouldSearchLocalKnowledge(settings.answerSourceMode)) {
       setRecognitionMessage(t("liveStatusSearchingLocal"));
     }
-    const knowledgeMatches = contextDecision.shouldAnswer && shouldSearchLocalKnowledge(settings.answerSourceMode)
-      ? findLocalKnowledgeCards(knowledgeFragment, {
+    const localLookup = contextDecision.shouldAnswer && shouldSearchLocalKnowledge(settings.answerSourceMode)
+      ? lookupLocalKnowledge(knowledgeFragment, {
         aggregatedText: contextDecision.aggregatedText,
         currentTopic: contextDecision.currentTopic
       })
-      : [];
+      : undefined;
+    const knowledgeMatches = localLookup?.matches ?? [];
     const policyDecision = resolveLiveAssistDecision({
       contextDecision,
       answerSourceMode: settings.answerSourceMode,
@@ -371,7 +378,8 @@ export function App() {
       settings.answerSourceMode,
       policyDecision.action,
       policyDecision.reason,
-      knowledgeMatches
+      knowledgeMatches,
+      localLookup
     ));
 
     if (policyDecision.action === "topic_intro") {
@@ -626,7 +634,7 @@ export function App() {
     if (shouldSearchLocalKnowledge(settings.answerSourceMode)) {
       setIsSearchingLocal(true);
       await showLocalSearchFeedback();
-      knowledgeMatches = findLocalKnowledgeCards(manualText);
+      knowledgeMatches = lookupLocalKnowledge(manualText).matches;
       setIsSearchingLocal(false);
     }
 
@@ -805,6 +813,11 @@ export function App() {
                 <span>чувствительность</span><code>{liveDecisionDiagnostics?.sensitivity ?? "—"}</code>
                 <span>локальное совпадение</span><code>{String(liveDecisionDiagnostics?.localMatchFound ?? false)}</code>
                 <span>карточка</span><code>{liveDecisionDiagnostics?.matchedCardId ? `${liveDecisionDiagnostics.matchedCardId} — ${liveDecisionDiagnostics.matchedCardTitle}` : "—"}</code>
+                <span>нормализованный запрос</span><code>{liveDecisionDiagnostics?.localNormalizedQuery || "—"}</code>
+                <span>порог совпадения</span><code>{liveDecisionDiagnostics?.localScoreThreshold ?? "—"}</code>
+                <span>контекст темы добавлен</span><code>{String(liveDecisionDiagnostics?.localTopicContextAdded ?? false)}</code>
+                <span>источник local lookup</span><code>{liveDecisionDiagnostics?.localQuerySource ?? "—"}</code>
+                <span>кандидаты local lookup</span><code>{formatLocalDebugCandidates(liveDecisionDiagnostics?.localDebugCandidates ?? [])}</code>
                 <span>ответ показан</span><code>{String(liveDecisionDiagnostics?.answerRendered ?? false)}</code>
                 <span>решение</span><code>{liveDecisionDiagnostics?.decision ?? "—"}</code>
                 <span>источник решения</span><code>{liveDecisionDiagnostics?.decisionSource ?? "—"}</code>
@@ -968,7 +981,8 @@ function createLiveDecisionDiagnostics(
   answerSourceMode: AnswerSourceMode,
   decision: LiveAssistAction,
   reason: string,
-  knowledgeMatches: KnowledgeCard[]
+  knowledgeMatches: KnowledgeCard[],
+  localLookup?: ReturnType<typeof lookupLocalKnowledge>
 ): LiveDecisionDiagnostics {
   const matchedCard = knowledgeMatches[0];
   return {
@@ -991,8 +1005,21 @@ function createLiveDecisionDiagnostics(
     localMatchFound: knowledgeMatches.length > 0,
     matchedCardId: matchedCard?.id,
     matchedCardTitle: matchedCard?.title,
-    answerRendered: false
+    answerRendered: false,
+    localNormalizedQuery: localLookup?.normalizedQuery ?? "",
+    localDebugCandidates: localLookup?.debugCandidates ?? [],
+    localScoreThreshold: localLookup?.scoreThreshold ?? 0,
+    localTopicContextAdded: localLookup?.topicContextAdded ?? false,
+    localQuerySource: localLookup?.querySource
   };
+}
+
+function formatLocalDebugCandidates(candidates: KnowledgeCandidateDebug[]): string {
+  if (candidates.length === 0) return "—";
+  return candidates
+    .slice(0, 5)
+    .map((candidate) => `${candidate.title}: ${candidate.score} (${candidate.rejectionReason})`)
+    .join("\n");
 }
 
 function getSensitivityLabel(

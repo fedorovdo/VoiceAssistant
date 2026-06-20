@@ -1,0 +1,84 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  ConversationContextBuffer,
+  lookupLocalKnowledge,
+  resolveLiveAssistDecision
+} from "@voiceassistant/shared";
+
+const basicQuestions = [
+  ["Как проверить порты в Linux?", "linux-open-ports"],
+  ["Как проверить порт в Linux?", "linux-open-ports"],
+  ["Из чего состоит Docker?", "docker-overview"],
+  ["Что такое Docker?", "docker-overview"],
+  ["Из чего состоит Kubernetes?", "kubernetes-overview"],
+  ["Что такое Kubernetes?", "kubernetes-overview"]
+] as const;
+
+test("production local lookup matches six basic supported questions", () => {
+  for (const [query, expectedCardId] of basicQuestions) {
+    const result = lookupLocalKnowledge(query);
+    assert.equal(result.bestMatch?.id, expectedCardId, query);
+    assert.equal(result.matches[0]?.id, expectedCardId, query);
+    assert.ok(result.normalizedQuery.length > 0, query);
+  }
+});
+
+test("production local lookup handles Linux port inflections and common overview wording", () => {
+  for (const query of [
+    "Какие порты открыты в Linux?",
+    "Посмотреть открытые порты"
+  ]) {
+    assert.equal(lookupLocalKnowledge(query).bestMatch?.id, "linux-open-ports", query);
+  }
+
+  assert.equal(lookupLocalKnowledge("Основные компоненты Docker").bestMatch?.id, "docker-overview");
+  assert.equal(lookupLocalKnowledge("Основные компоненты Kubernetes").bestMatch?.id, "kubernetes-overview");
+});
+
+test("new Docker question overrides previous Kubernetes context", () => {
+  const context = new ConversationContextBuffer();
+  context.add("Давайте поговорим о Kubernetes", 1_000);
+  const contextDecision = context.add("Что такое Docker?", 2_000);
+  const result = lookupLocalKnowledge("Что такое Docker?", {
+    aggregatedText: `Давайте поговорим о Kubernetes. ${contextDecision.aggregatedText}`,
+    currentTopic: "Kubernetes"
+  });
+
+  assert.equal(result.bestMatch?.id, "docker-overview");
+  assert.equal(result.querySource, "newest_fragment");
+  assert.equal(result.topicContextAdded, false);
+});
+
+test("unrelated phrases stay unmatched and expose conservative diagnostics", () => {
+  for (const query of ["из чего состоит дом", "порт вина", "докер без technical context"]) {
+    const result = lookupLocalKnowledge(query);
+    assert.equal(result.bestMatch, undefined, query);
+    assert.deepEqual(result.matches, [], query);
+    assert.ok(result.debugCandidates.length <= 5, query);
+    assert.ok(result.debugCandidates.every((candidate) => candidate.score < result.scoreThreshold), query);
+  }
+});
+
+test("Manual and Live production lookup return the same card for normalized text", () => {
+  for (const [query, expectedCardId] of basicQuestions) {
+    const contextDecision = new ConversationContextBuffer().add(query, 1_000, "balanced");
+    const manualResult = lookupLocalKnowledge(query);
+    const liveResult = lookupLocalKnowledge(query, {
+      aggregatedText: contextDecision.aggregatedText,
+      currentTopic: contextDecision.currentTopic
+    });
+    const policy = resolveLiveAssistDecision({
+      contextDecision,
+      answerSourceMode: "local-only",
+      hasLocalMatch: liveResult.matches.length > 0,
+      hasApiKey: false,
+      answerMode: "short"
+    });
+
+    assert.equal(manualResult.bestMatch?.id, expectedCardId, query);
+    assert.equal(liveResult.bestMatch?.id, manualResult.bestMatch?.id, query);
+    assert.equal(policy.action, "answer", query);
+    assert.equal(policy.sourceResolution, "local", query);
+  }
+});

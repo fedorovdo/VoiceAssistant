@@ -1,8 +1,8 @@
 import type { AnswerSourceContext, AnswerSourceResolution, AnswerSourceMode } from "./answerSource.js";
 import { resolveAnswerSource } from "./answerSource.js";
 import type { LiveContextDecision } from "./conversationContext.js";
-import type { KnowledgeCard } from "./knowledgeCards.js";
-import { findKnowledgeCards } from "./knowledgeCards.js";
+import type { KnowledgeCard, KnowledgeCandidateDebug, KnowledgeCardLookupResult } from "./knowledgeCards.js";
+import { lookupKnowledgeCards } from "./knowledgeCards.js";
 
 export type LiveAssistAction =
   | "answer"
@@ -78,7 +78,7 @@ export function findLiveKnowledgeCards(
   aggregatedText: string,
   currentTopic?: LiveContextDecision["currentTopic"]
 ): KnowledgeCard[] {
-  return findLocalKnowledgeCards(fragment, { aggregatedText, currentTopic });
+  return lookupLocalKnowledge(fragment, { aggregatedText, currentTopic }).matches;
 }
 
 export interface LocalKnowledgeLookupContext {
@@ -86,19 +86,75 @@ export interface LocalKnowledgeLookupContext {
   currentTopic?: LiveContextDecision["currentTopic"];
 }
 
+export type LocalKnowledgeQuerySource = "newest_fragment" | "topic_context" | "aggregated_context";
+
+export interface LocalKnowledgeLookupResult extends KnowledgeCardLookupResult {
+  querySource: LocalKnowledgeQuerySource;
+  topicContextAdded: boolean;
+}
+
+export function lookupLocalKnowledge(
+  fragment: string,
+  context: LocalKnowledgeLookupContext = {}
+): LocalKnowledgeLookupResult {
+  const direct = lookupKnowledgeCards(fragment);
+  if (direct.bestMatch) {
+    return withLookupContext(direct, "newest_fragment", false);
+  }
+
+  const attempts: KnowledgeCardLookupResult[] = [direct];
+  if (context.currentTopic) {
+    const contextual = lookupKnowledgeCards(`${fragment} ${topicSearchContext(context.currentTopic)}`);
+    attempts.push(contextual);
+    if (contextual.bestMatch) {
+      return withLookupContext(contextual, "topic_context", true);
+    }
+  }
+
+  if (context.aggregatedText && normalizeLookupText(context.aggregatedText) !== normalizeLookupText(fragment)) {
+    const aggregated = lookupKnowledgeCards(context.aggregatedText);
+    attempts.push(aggregated);
+    if (aggregated.bestMatch) {
+      return withLookupContext(aggregated, "aggregated_context", Boolean(context.currentTopic));
+    }
+  }
+
+  return {
+    ...direct,
+    debugCandidates: mergeDebugCandidates(attempts),
+    querySource: "newest_fragment",
+    topicContextAdded: attempts.length > 1 && Boolean(context.currentTopic)
+  };
+}
+
 export function findLocalKnowledgeCards(
   fragment: string,
   context: LocalKnowledgeLookupContext = {}
 ): KnowledgeCard[] {
-  const directMatches = findKnowledgeCards(fragment);
-  if (directMatches.length > 0) return directMatches;
+  return lookupLocalKnowledge(fragment, context).matches;
+}
 
-  if (context.currentTopic) {
-    const contextualMatches = findKnowledgeCards(`${fragment} ${topicSearchContext(context.currentTopic)}`);
-    if (contextualMatches.length > 0) return contextualMatches;
+function withLookupContext(
+  result: KnowledgeCardLookupResult,
+  querySource: LocalKnowledgeQuerySource,
+  topicContextAdded: boolean
+): LocalKnowledgeLookupResult {
+  return { ...result, querySource, topicContextAdded };
+}
+
+function mergeDebugCandidates(attempts: KnowledgeCardLookupResult[]): KnowledgeCandidateDebug[] {
+  const byCard = new Map<string, KnowledgeCandidateDebug>();
+  for (const candidate of attempts.flatMap((attempt) => attempt.debugCandidates)) {
+    const current = byCard.get(candidate.cardId);
+    if (!current || candidate.score > current.score) {
+      byCard.set(candidate.cardId, candidate);
+    }
   }
+  return [...byCard.values()].sort((left, right) => right.score - left.score).slice(0, 5);
+}
 
-  return context.aggregatedText ? findKnowledgeCards(context.aggregatedText) : [];
+function normalizeLookupText(text: string): string {
+  return text.toLowerCase().replace(/[?!.,;:]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function topicSearchContext(topic: NonNullable<LiveContextDecision["currentTopic"]>): string {

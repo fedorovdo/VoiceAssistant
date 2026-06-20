@@ -145,6 +145,8 @@ Broad practical questions such as `Как дать права в Linux?` are ans
 
 Dockerfile questions such as `Что такое Dockerfile?` and common Russian STT variants are normalized and answered from the same local reference.
 
+Local matching also recognizes common Russian question forms such as `Что такое ...?`, `Из чего состоит ...?`, `Расскажи про ...` and `Для чего нужен ...?`, including practical singular/plural variants such as `порт` and `порты`.
+
 Manual Ask and Live Assist check these cards before waiting for GPT. A matching card is shown immediately with the source label **local knowledge**, and it works without an API key. In interview and learning modes, a configured GPT provider may enrich that result while the local card stays visible; the source changes clearly when the GPT response arrives. Without a local match, an API key is required for a GPT answer.
 
 In **Local knowledge only** mode, Manual Ask and Live Assist use the same local lookup. Live Assist automatically renders a matched card as soon as the buffered utterance is complete; unmatched or ignored fragments update only the compact status and do not clear the last useful answer.

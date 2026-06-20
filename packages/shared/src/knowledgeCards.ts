@@ -11,8 +11,33 @@ export interface KnowledgeCard {
   relatedTerms: string[];
 }
 
+export type KnowledgeCandidateRejectionReason =
+  | "accepted"
+  | "no_alias_phrase"
+  | "ambiguous_without_context"
+  | "below_threshold";
+
+export interface KnowledgeCandidateDebug {
+  cardId: string;
+  title: string;
+  score: number;
+  accepted: boolean;
+  matchedAlias?: string;
+  rejectionReason: KnowledgeCandidateRejectionReason;
+}
+
+export interface KnowledgeCardLookupResult {
+  matches: KnowledgeCard[];
+  bestMatch?: KnowledgeCard;
+  normalizedQuery: string;
+  debugCandidates: KnowledgeCandidateDebug[];
+  scoreThreshold: number;
+}
+
+const knowledgeScoreThreshold = 100;
+
 const baseKnowledgeCards: KnowledgeCard[] = [
-  card("linux-open-ports", "Проверка открытых портов в Linux", ["check open ports in linux", "как проверить открытые порты linux", "как проверить открытые порты в linux", "как проверить порт", "проверить порт linux", "открытые порты linux", "listening ports linux"], "linux", "Показывает, какие процессы слушают сетевые порты и какие соединения активны.", ["Для новых систем обычно используют ss.", "Ключи -lntup показывают listening TCP/UDP-порты и процессы.", "Для проверки доступности извне дополнительно учитывайте firewall."], ["sudo ss -lntup", "sudo lsof -i -P -n"], ["ss", "netstat", "port"]),
+  card("linux-open-ports", "Проверка открытых портов в Linux", ["check open ports in linux", "как проверить открытые порты linux", "как проверить открытые порты в linux", "как проверить порт", "как проверить порт в linux", "как проверить порты в linux", "проверить порт linux", "проверить порты linux", "какие порты открыты в linux", "посмотреть открытые порты", "открытые порты linux", "listening ports linux"], "linux", "Показывает, какие процессы слушают сетевые порты и какие соединения активны.", ["Для новых систем обычно используют ss.", "Ключи -lntup показывают listening TCP/UDP-порты и процессы.", "Для проверки доступности извне дополнительно учитывайте firewall."], ["sudo ss -lntup", "sudo lsof -i -P -n"], ["ss", "netstat", "port"]),
   card("linux-ss", "Команда ss", ["ss command", "команда ss", "ss -lntup", "socket statistics", "listening ports with ss", "проверить слушающие порты ss"], "linux", "Современная Linux-утилита для просмотра сокетов, портов и сетевых соединений.", ["Работает быстрее netstat на больших системах.", "Может показывать TCP, UDP, listening-сокеты и связанные процессы."], ["ss -lnt", "sudo ss -lntup"], ["netstat", "port", "linux-open-ports"]),
   card("linux-netstat", "Команда netstat", ["netstat command", "команда netstat", "netstat -tulpn"], "linux", "Классическая утилита для сетевых соединений и таблиц маршрутизации; на новых Linux часто заменена на ss.", ["Полезна на старых системах и в знакомых runbook.", "Пакет net-tools может быть не установлен по умолчанию."], ["sudo netstat -tulpn", "netstat -rn"], ["ss", "routing", "port"]),
   card("linux-journalctl", "journalctl", ["journalctl command", "команда journalctl", "systemd logs", "логи systemd", "journalctl -u"], "linux", "Читает системный журнал systemd и логи служб.", ["Фильтрует записи по unit, времени и приоритету.", "Ключ -f показывает новые записи в реальном времени."], ["journalctl -u nginx --since today", "journalctl -f", "journalctl -p err -b"], ["systemctl", "logs", "systemd"]),
@@ -22,6 +47,7 @@ const baseKnowledgeCards: KnowledgeCard[] = [
 
   card("docker-image", "Docker image", ["docker image", "образ docker", "docker образ", "что такое docker image"], "docker", "Неизменяемый шаблон с приложением, зависимостями и метаданными для запуска контейнеров.", ["Image строится слоями.", "Один image может запускать много контейнеров.", "Обычно хранится в registry."], ["docker image ls", "docker inspect IMAGE"], ["docker-container", "dockerfile", "registry"]),
   card("docker-container", "Docker container", ["docker container", "контейнер docker", "docker контейнер", "что такое контейнер"], "docker", "Запущенный или остановленный экземпляр Docker image с изолированными процессами и файловой системой.", ["Контейнер не является полноценной виртуальной машиной.", "Изменяемые данные лучше хранить в volume."], ["docker ps -a", "docker inspect CONTAINER"], ["docker-image", "docker-run", "volume"]),
+  card("docker-overview", "Docker: основные компоненты", ["что такое docker", "из чего состоит docker", "основные компоненты docker", "расскажи про docker", "для чего нужен docker"], "docker", "Docker — платформа для сборки, доставки и запуска приложений в контейнерах.", ["Dockerfile описывает сборку image.", "Image хранит неизменяемый шаблон приложения, container является его запущенным экземпляром.", "Docker Engine управляет контейнерами, registry хранит images, volumes и networks отвечают за данные и сеть."], ["docker version", "docker info", "docker ps", "docker image ls"], ["dockerfile", "image", "container", "registry", "volume", "network"]),
   card("dockerfile", "Dockerfile", ["dockerfile", "docker file", "docker-файл", "докер файл", "докер-файл", "докерфайл", "что такое dockerfile", "что такое docker файл", "что такое docker-файл", "что такое докер файл", "что такое докер-файл", "из чего состоит dockerfile", "из чего состоит docker файл", "из чего состоит docker-файл", "из чего состоит докер файл", "из чего состоит докер-файл", "что в dockerfile", "что в docker-файле", "что пишут в dockerfile", "что вы знаете про dockerfile", "структура dockerfile", "инструкции dockerfile", "from run copy cmd entrypoint", "что стоит docker файл", "что стоит docker-файл", "что состоит docker файл", "что состоит docker-файл", "из чего dockerfile"], "docker", "Dockerfile — текстовый рецепт сборки Docker image из последовательности инструкций.", ["FROM задает базовый image; RUN выполняет команды сборки.", "COPY и ADD добавляют файлы, WORKDIR задает рабочий каталог, ENV — переменные окружения, EXPOSE документирует порт.", "CMD и ENTRYPOINT определяют команду запуска контейнера.", "Инструкции сборки могут создавать отдельные слои image, поэтому их порядок влияет на кеш и размер."], ["docker build -t my-app ."], ["docker-image", "docker-build", "FROM", "RUN", "COPY", "ADD", "WORKDIR", "ENV", "EXPOSE", "CMD", "ENTRYPOINT"]),
   card("docker-build", "docker build", ["docker build", "собрать docker image", "сборка docker образа"], "docker", "Собирает Docker image по Dockerfile и build context.", ["Контекст обычно указывается последним аргументом.", "Тег -t делает image удобным для запуска и публикации."], ["docker build -t my-app:latest .", "docker build --no-cache -t my-app ."], ["dockerfile", "docker-image"]),
   card("docker-run", "docker run", ["docker run", "запустить docker контейнер", "run container"], "docker", "Создает контейнер из image и запускает его.", ["-d запускает в фоне.", "-p публикует порт, -v подключает volume, --rm удаляет контейнер после остановки."], ["docker run --rm -p 8080:80 nginx", "docker run -d --name app my-app"], ["docker-container", "docker-image"]),
@@ -29,6 +55,7 @@ const baseKnowledgeCards: KnowledgeCard[] = [
   card("docker-logs", "docker logs", ["docker logs", "логи docker контейнера", "логи контейнера", "container logs", "как посмотреть логи docker", "показать логи docker"], "docker", "Показывает stdout и stderr выбранного контейнера.", ["-f продолжает следить за новыми строками.", "--since ограничивает временной диапазон."], ["docker logs CONTAINER", "docker logs -f --tail 100 CONTAINER"], ["docker-container", "journalctl"]),
 
   card("kubernetes-pod", "Kubernetes pod", ["kubernetes pod", "k8s pod", "под kubernetes", "что такое pod", "что такое под в kubernetes"], "kubernetes", "Минимальная единица запуска в Kubernetes: один или несколько контейнеров с общей сетью и томами.", ["Pod обычно создается контроллером, а не вручную.", "Контейнеры внутри Pod используют один IP и могут обращаться через localhost.", "Pod считается временным объектом."], ["kubectl get pods", "kubectl describe pod POD"], ["deployment", "container", "service"]),
+  card("kubernetes-overview", "Kubernetes: основные компоненты", ["что такое kubernetes", "из чего состоит kubernetes", "основные компоненты kubernetes", "расскажи про kubernetes", "для чего нужен kubernetes"], "kubernetes", "Kubernetes — система оркестрации контейнерных приложений в кластере.", ["Control plane хранит состояние и принимает решения через API server, scheduler и controllers.", "Worker nodes запускают Pod через kubelet и container runtime.", "Deployment управляет версиями и репликами, Service дает стабильный доступ, Ingress маршрутизирует внешний HTTP-трафик."], ["kubectl cluster-info", "kubectl get nodes", "kubectl get pods -A"], ["control plane", "node", "pod", "deployment", "service", "ingress"]),
   card("kubernetes-deployment", "Kubernetes deployment", ["kubernetes deployment", "k8s deployment", "деплоймент kubernetes", "что такое deployment"], "kubernetes", "Контроллер, который поддерживает нужное число реплик Pod и выполняет обновления приложения.", ["Управляет ReplicaSet.", "Поддерживает rolling update и rollback.", "Желаемое состояние хранится в manifest."], ["kubectl get deployments", "kubectl rollout status deployment/APP", "kubectl rollout undo deployment/APP"], ["pod", "replicaset", "kubectl"]),
   card("kubernetes-service", "Kubernetes service", ["kubernetes service", "k8s service", "сервис kubernetes", "что такое service kubernetes"], "kubernetes", "Стабильная виртуальная точка доступа к группе Pod, выбранных selector-ом.", ["Service отделяет клиентов от временных IP Pod.", "Частые типы: ClusterIP, NodePort и LoadBalancer."], ["kubectl get services", "kubectl describe service SERVICE"], ["pod", "ingress", "dns"]),
   card("kubernetes-ingress", "Kubernetes ingress", ["kubernetes ingress", "k8s ingress", "ингресс kubernetes", "что такое ingress", "ingress"], "kubernetes", "Правила HTTP/HTTPS-маршрутизации внешнего трафика к Kubernetes Service.", ["Для работы нужен Ingress Controller.", "Обычно маршрутизирует по hostname и URL path.", "TLS настраивается через Secret и правила ingress."], ["kubectl get ingress", "kubectl describe ingress INGRESS"], ["service", "load balancer", "dns"]),
@@ -126,31 +153,92 @@ const contextMarkers = [
 ];
 
 export function findKnowledgeCards(text: string): KnowledgeCard[] {
-  const normalizedText = normalize(text);
-  if (!normalizedText) return [];
-
-  return knowledgeCards
-    .map((knowledgeCard, index) => ({ knowledgeCard, index, score: scoreCard(knowledgeCard, normalizedText) }))
-    .filter((result) => result.score > 0)
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .slice(0, 2)
-    .map((result) => result.knowledgeCard);
+  return lookupKnowledgeCards(text).matches;
 }
 
-function scoreCard(knowledgeCard: KnowledgeCard, text: string): number {
+export function lookupKnowledgeCards(text: string): KnowledgeCardLookupResult {
+  const normalizedQuery = normalize(text);
+  if (!normalizedQuery) {
+    return {
+      matches: [],
+      normalizedQuery,
+      debugCandidates: [],
+      scoreThreshold: knowledgeScoreThreshold
+    };
+  }
+
+  const ranked = knowledgeCards
+    .map((knowledgeCard, index) => ({ knowledgeCard, index, ...scoreCard(knowledgeCard, normalizedQuery) }))
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+  const matches = ranked
+    .filter((result) => result.accepted)
+    .slice(0, 2)
+    .map((result) => result.knowledgeCard);
+
+  return {
+    matches,
+    bestMatch: matches[0],
+    normalizedQuery,
+    debugCandidates: ranked.slice(0, 5).map(({ knowledgeCard, score, accepted, matchedAlias, rejectionReason }) => ({
+      cardId: knowledgeCard.id,
+      title: knowledgeCard.title,
+      score,
+      accepted,
+      matchedAlias,
+      rejectionReason
+    })),
+    scoreThreshold: knowledgeScoreThreshold
+  };
+}
+
+function scoreCard(knowledgeCard: KnowledgeCard, text: string): Omit<KnowledgeCandidateDebug, "cardId" | "title"> {
   const candidates = [knowledgeCard.title, ...knowledgeCard.aliases].map(normalize);
-  let score = 0;
+  let acceptedScore = 0;
+  let matchedAlias: string | undefined;
+  let rejectedAmbiguous = false;
 
   for (const candidate of candidates) {
     if (!candidate || !containsPhrase(text, candidate)) continue;
-    if (ambiguousAliases.has(candidate) && !hasTechnicalContext(text, candidate)) continue;
+    if (ambiguousAliases.has(candidate) && !hasTechnicalContext(text, candidate)) {
+      rejectedAmbiguous = true;
+      continue;
+    }
 
     const exactBonus = text === candidate ? 40 : 0;
     const titleBonus = candidate === normalize(knowledgeCard.title) && candidate.length >= 6 ? 12 : 0;
-    score = Math.max(score, candidate.length + exactBonus + titleBonus);
+    const score = knowledgeScoreThreshold + candidate.length + exactBonus + titleBonus;
+    if (score > acceptedScore) {
+      acceptedScore = score;
+      matchedAlias = candidate;
+    }
   }
 
-  return score;
+  if (acceptedScore >= knowledgeScoreThreshold) {
+    return { score: acceptedScore, accepted: true, matchedAlias, rejectionReason: "accepted" };
+  }
+
+  const similarityScore = Math.min(knowledgeScoreThreshold - 1, Math.round(bestTokenCoverage(text, candidates) * 99));
+  return {
+    score: similarityScore,
+    accepted: false,
+    rejectionReason: rejectedAmbiguous
+      ? "ambiguous_without_context"
+      : similarityScore > 0
+        ? "below_threshold"
+        : "no_alias_phrase"
+  };
+}
+
+function bestTokenCoverage(text: string, candidates: string[]): number {
+  const queryTokens = new Set(text.split(" ").filter((token) => token.length >= 3));
+  if (queryTokens.size === 0) return 0;
+
+  return candidates.reduce((best, candidate) => {
+    const candidateTokens = new Set(candidate.split(" ").filter((token) => token.length >= 3));
+    if (candidateTokens.size === 0) return best;
+    const overlap = [...candidateTokens].filter((token) => queryTokens.has(token)).length;
+    return Math.max(best, overlap / candidateTokens.size);
+  }, 0);
 }
 
 function hasTechnicalContext(text: string, alias: string): boolean {
