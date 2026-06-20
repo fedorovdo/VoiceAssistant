@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { findKnowledgeCards, knowledgeCards } from "@voiceassistant/shared";
+import { findKnowledgeCards, knowledgeCards, lookupLocalKnowledge } from "@voiceassistant/shared";
 
 test("knowledgeCards keeps a valid unique offline catalog", () => {
   assert.ok(knowledgeCards.length >= 150);
@@ -125,4 +125,42 @@ test("findKnowledgeCards matches Dockerfile questions and STT distortions", () =
   }
 
   assert.deepEqual(findKnowledgeCards("что стоит стол"), []);
+});
+
+test("production lookup covers repaired sudo, Docker, Git, AD, and port phrases", () => {
+  const cases = [
+    ["Как добавить пользователю sudo?", "linux-add-user-sudo"],
+    ["Как дать пользователю права sudo?", "linux-add-user-sudo"],
+    ["Как добавить пользователя в группу sudo?", "linux-add-user-sudo"],
+    ["Что такое слой Docker?", "docker-image-layers"],
+    ["Из чего состоит Docker-образ?", "docker-image-layers"],
+    ["Как посмотреть слои Docker?", "docker-image-layers"],
+    ["Как посмотреть ветки Git?", "git-branch"],
+    ["Показать все ветки Git", "git-branch"],
+    ["Как отменить последний commit?", "git-undo-last-commit"],
+    ["Как откатить последний коммит?", "git-undo-last-commit"],
+    ["Что такое pull request?", "git-pull-request"],
+    ["Что такое пул реквест?", "git-pull-request"],
+    ["Как проверить пользователя AD?", "ad-user-lookup"],
+    ["Как найти пользователя Active Directory?", "ad-user-lookup"],
+    ["Как проверить доступность порта?", "network-tcp-port"]
+  ] as const;
+
+  for (const [query, expectedCardId] of cases) {
+    assert.equal(lookupLocalKnowledge(query).bestMatch?.id, expectedCardId, query);
+  }
+});
+
+test("new technical aliases stay conservative for unrelated phrases", () => {
+  for (const query of [
+    "как добавить сахар",
+    "слой пирога",
+    "ветки дерева",
+    "отменить встречу",
+    "запрос в магазин",
+    "найти пользователя сайта",
+    "порт вина"
+  ]) {
+    assert.equal(lookupLocalKnowledge(query).bestMatch, undefined, query);
+  }
 });

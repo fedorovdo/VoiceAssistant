@@ -50,3 +50,4 @@ export * from "./conversationContext.js";
 export * from "./technicalTermNormalizer.js";
 export * from "./liveAssistDecision.js";
 export * from "./utteranceBuffer.js";
+export * from "./localKnowledgeRegressionCases.js";

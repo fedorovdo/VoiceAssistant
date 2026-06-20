@@ -67,6 +67,14 @@ npm run verify
 npm run verify:win
 ```
 
+Run the canonical local knowledge smoke suite independently with:
+
+```powershell
+npm run test:knowledge
+```
+
+The regression cases exercise the production local lookup and protect core offline Linux, Docker, Kubernetes, Git, Active Directory, and networking questions from silent matching regressions.
+
 `EADDRINUSE` for `127.0.0.1:8787` means another process is already listening on the Fastify backend port. Run `npm run check:ports` to inspect its PID, then `npm run stop:dev` before starting a fresh development session.
 
 On Windows, the PowerShell helper can be launched from the repository root:

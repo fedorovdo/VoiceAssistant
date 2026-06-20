@@ -15,6 +15,13 @@ try {
   }
 
   Write-Host ""
+  Write-Host "=== Local knowledge regression suite ===" -ForegroundColor Green
+  & npm.cmd run test:knowledge
+  if ($LASTEXITCODE -ne 0) {
+    throw "Local knowledge regression suite failed with exit code $LASTEXITCODE."
+  }
+
+  Write-Host ""
   Write-Host "=== Backend tests ===" -ForegroundColor Green
   & npm.cmd run test:backend
   if ($LASTEXITCODE -ne 0) {
