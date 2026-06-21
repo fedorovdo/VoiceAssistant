@@ -230,6 +230,45 @@ button {
   background: #e9f3fc;
 }
 
+.live-processing-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 23px;
+  color: #55555b;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.live-processing-state > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a2a2a7;
+}
+
+.live-processing-listening > span,
+.live-processing-transcribing > span,
+.live-processing-collecting > span,
+.live-processing-deciding > span,
+.live-processing-searching_local > span,
+.live-processing-requesting_gpt > span {
+  background: #4f8f6a;
+  box-shadow: 0 0 0 3px rgb(79 143 106 / 10%);
+}
+
+.live-processing-answered > span {
+  background: #2f7d4f;
+}
+
+.live-processing-no_match > span {
+  background: #a27b3e;
+}
+
+.live-processing-error > span {
+  background: #a44f47;
+}
+
 .simulated-badge {
   color: #765316;
   background: #faf2dd;

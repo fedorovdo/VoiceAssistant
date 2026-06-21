@@ -32,7 +32,7 @@ export class UtteranceBuffer {
 
   constructor(options: UtteranceBufferOptions = {}) {
     this.combineWindowMs = options.combineWindowMs ?? 8_000;
-    this.idleFlushMs = options.idleFlushMs ?? 1_500;
+    this.idleFlushMs = options.idleFlushMs ?? 900;
     this.maxFragments = options.maxFragments ?? 3;
   }
 
@@ -130,8 +130,8 @@ function isClearlyCompleteUtterance(combinedText: string, newestText: string): b
   if (isLikelyContinuation(newestText)) return false;
   const normalized = normalize(combinedText);
   const wordCount = normalized.split(" ").filter(Boolean).length;
-  const hasExplicitQuestion = /(?:что такое|из чего состоит|для чего (?:нужен|нужна|нужно|нужны|применяется|используется)|как работает|чем отличается|как проверить|как добавить|как выдать|как дать|как настроить|как посмотреть)/i.test(normalized);
-  const hasStrongTechnicalTerm = /(?:\bdockerfile\b|\blinux\b|\bsudo\b|\bsudoers\b|\bdocker\b|\bkubernetes\b|\bkubectl\b|\bfirewall\b|\bsystemctl\b|\bjournalctl\b|\bactive directory\b|\bdns\b|\bdhcp\b|\bproxmox\b)/i.test(normalized);
+  const hasExplicitQuestion = /(?:что такое|из чего состоит|для чего (?:нужен|нужна|нужно|нужны|применяется|используется)|как работает|чем отличается|как (?:проверить|добавить|создать|выдать|дать|настроить|посмотреть|поменять|изменить|сменить|повысить|сделать))/i.test(normalized);
+  const hasStrongTechnicalTerm = /(?:\bdockerfile\b|\blinux\b|\bsudo\b|\bsudoers\b|\bwheel\b|\bpasswd\b|\bchmod\b|\bchown\b|\bdocker\b|\bkubernetes\b|\bkubectl\b|\bfirewall\b|\bsystemctl\b|\bjournalctl\b|\bactive directory\b|\bdns\b|\bdhcp\b|\bproxmox\b|порт|парол|пользовател)/i.test(normalized);
 
   if (/\?$/.test(newestText.trim()) && hasExplicitQuestion && hasStrongTechnicalTerm) return true;
   return wordCount >= 5 && hasStrongTechnicalTerm && !isLikelyIncompleteStart(normalized);
@@ -147,7 +147,7 @@ function isLikelyContinuation(text: string): boolean {
 }
 
 function isLikelyIncompleteStart(text: string): boolean {
-  return /^(?:как (?:проверить|дать|добавить|выдать|настроить|посмотреть)|команда для)(?:\s+[^.!?]+)?[?.!]?$/i.test(text)
+  return /^(?:как (?:проверить|дать|добавить|создать|выдать|настроить|посмотреть|поменять|изменить|сменить|повысить|сделать)|команда для)(?:\s+[^.!?]+)?[?.!]?$/i.test(text)
     && text.split(" ").filter(Boolean).length <= 4;
 }
 

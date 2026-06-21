@@ -52,6 +52,8 @@ const rules: NormalizationRule[] = [
   rule("(?:регистри|реджистри)", "registry", "registry", dockerContext),
 
   rule("(?:систем\\s+си\\s+ти\\s+эл|систем\\s+контрол)", "systemctl", "systemctl"),
+  phraseRepair("как\\s+поменять\\s+пароль\\s+linux", "Как поменять пароль в Linux", "Linux password question"),
+  phraseRepair("поменять\\s+пароль\\s+пользователю\\s+в\\s+linux", "Как поменять пароль пользователю в Linux", "Linux password question"),
   rule("(?:журнал\\s+контрол|журнал\\s+цтл)", "journalctl", "journalctl"),
   rule("(?:эс\\s+эс\\s+команда|команда\\s+эс\\s+эс)", "ss", "ss", technicalContext),
   rule("(?:чмод|си\\s+эйч\\s+мод)", "chmod", "chmod", technicalContext),
@@ -127,6 +129,15 @@ function repair(source: string, replacement: string): NormalizationRule {
     replacement,
     target: replacement,
     reason: "Dockerfile-specific STT phrase repair"
+  };
+}
+
+function phraseRepair(source: string, replacement: string, target: string): NormalizationRule {
+  return {
+    pattern: new RegExp(`(?<![\\p{L}\\p{N}])(?:${source})(?![\\p{L}\\p{N}])`, "giu"),
+    replacement,
+    target,
+    reason: "Technical STT phrase repair"
   };
 }
 

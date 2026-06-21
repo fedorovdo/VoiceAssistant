@@ -13,22 +13,30 @@ import type {
   LiveAssistIntent,
   LiveAssistSensitivity,
   LiveContextDecision,
+  LiveProcessingEvent,
+  LiveProcessingState,
+  LiveTimingDiagnostics,
   FragmentClassification,
   SanitizedTranscript,
   SpeechToTextProviderId,
   TechnicalTopic,
+  TranscriptSanitizationReason,
   UtteranceFlushReason,
   WorkMode
 } from "@voiceassistant/shared";
 import {
   ConversationContextBuffer,
+  LiveAnswerRequestGate,
   lookupLocalKnowledge,
   migrateDesktopSettings,
   normalizeTechnicalTerms,
+  reduceLiveProcessingState,
   resolveLiveAssistDecision,
   resolveAnswerSource,
   sanitizeTranscript,
   shouldSearchLocalKnowledge,
+  shouldUseLocalOnlyFastPath,
+  TranscriptDuplicateTracker,
   UtteranceBuffer
 } from "@voiceassistant/shared";
 import { createTranslator } from "./i18n.js";
@@ -68,7 +76,16 @@ type PermissionState = "idle" | "requesting" | "success" | "error";
 type PermissionMessage = "unavailable" | "granted" | "denied" | "not_found" | "error" | undefined;
 type LiveFragmentSource = "mock" | "microphone";
 type AnswerSource = "local" | "gpt" | undefined;
-type SttCleanupStatus = "idle" | "accepted" | "skipped" | "waiting";
+type SttCleanupStatus = "idle" | "accepted" | "skipped" | "waiting" | "duplicate";
+
+interface TranscriptDecisionDiagnostics {
+  rawTranscript: string;
+  normalizedTranscript: string;
+  sanitizerDecision: "accepted" | "rejected" | "duplicate";
+  sanitizerReason: TranscriptSanitizationReason;
+  technicalProtectionApplied: boolean;
+  duplicateDetected: boolean;
+}
 
 interface LiveDecisionDiagnostics {
   rawFragment: string;
@@ -97,6 +114,17 @@ interface LiveDecisionDiagnostics {
   intentRescue: boolean;
   matchedQuestionPattern?: string;
   matchedTechnicalTerm?: string;
+  processingStateBefore: LiveProcessingState;
+  processingStateAfter: LiveProcessingState;
+  answerInFlightBefore: boolean;
+  answerInFlightAfter: boolean;
+  duplicateKey?: string;
+  duplicateReason?: string;
+  cooldownType: "none" | "topic" | "gpt";
+  cooldownBlocked: boolean;
+  pendingRequestBefore?: string;
+  pendingRequestAfter?: string;
+  returnedToListening: boolean;
 }
 
 interface UtteranceDiagnostics {
@@ -131,6 +159,9 @@ export function App() {
   });
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [sttCleanupStatus, setSttCleanupStatus] = useState<SttCleanupStatus>("idle");
+  const [transcriptDecisionDiagnostics, setTranscriptDecisionDiagnostics] = useState<TranscriptDecisionDiagnostics>();
+  const [liveProcessingState, setLiveProcessingState] = useState<LiveProcessingState>("idle");
+  const [liveTimingDiagnostics, setLiveTimingDiagnostics] = useState<LiveTimingDiagnostics>({});
   const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
   const [isRefreshingDevices, setIsRefreshingDevices] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>("permission_hint");
@@ -146,9 +177,81 @@ export function App() {
   const utteranceSourceRef = useRef<LiveFragmentSource>("microphone");
   const utteranceTimerRef = useRef<number>();
   const pendingMicrophoneFragmentsRef = useRef<string[]>([]);
-  const lastAcceptedTranscriptRef = useRef("");
+  const transcriptDuplicateTrackerRef = useRef(new TranscriptDuplicateTracker());
+  const liveTimingRef = useRef<LiveTimingDiagnostics>({});
+  const lastAudioChunkCreatedAtRef = useRef<number>();
+  const liveProcessingStateRef = useRef<LiveProcessingState>("idle");
+  const processingSettleTimerRef = useRef<number>();
+  const answerRequestGateRef = useRef(new LiveAnswerRequestGate());
+  const transitionLiveProcessing = useCallback((event: LiveProcessingEvent) => {
+    const terminalEvent = event === "answer_rendered"
+      || event === "duplicate_detected"
+      || event === "local_match_missing"
+      || event === "processing_failed"
+      || event === "settled";
+    if (!terminalEvent && processingSettleTimerRef.current !== undefined) {
+      window.clearTimeout(processingSettleTimerRef.current);
+      processingSettleTimerRef.current = undefined;
+    }
+    const next = reduceLiveProcessingState(liveProcessingStateRef.current, event);
+    liveProcessingStateRef.current = next;
+    setLiveProcessingState(next);
+  }, []);
+  const scheduleReturnToListening = useCallback((delayMs = 1_200) => {
+    if (processingSettleTimerRef.current !== undefined) {
+      window.clearTimeout(processingSettleTimerRef.current);
+    }
+    processingSettleTimerRef.current = window.setTimeout(() => {
+      processingSettleTimerRef.current = undefined;
+      transitionLiveProcessing("settled");
+      setRecognitionMessage("");
+      setLiveDecisionDiagnostics((current) => current ? {
+        ...current,
+        processingStateAfter: "listening",
+        answerInFlightAfter: answerRequestGateRef.current.isInFlight(),
+        pendingRequestAfter: conversationContextRef.current.getPendingRequestText(),
+        returnedToListening: true
+      } : current);
+    }, delayMs);
+  }, [transitionLiveProcessing]);
+  const returnToListeningNow = useCallback(() => {
+    transitionLiveProcessing("settled");
+    setLiveDecisionDiagnostics((current) => current ? {
+      ...current,
+      processingStateAfter: "listening",
+      answerInFlightAfter: answerRequestGateRef.current.isInFlight(),
+      pendingRequestAfter: conversationContextRef.current.getPendingRequestText(),
+      returnedToListening: true
+    } : current);
+  }, [transitionLiveProcessing]);
+  const beginLiveTimingCycle = useCallback((timestamp: number) => {
+    if (!import.meta.env.DEV) return;
+    const next = { audioChunkCreatedAt: timestamp };
+    liveTimingRef.current = next;
+    setLiveTimingDiagnostics(next);
+  }, []);
+  const markLiveTiming = useCallback((
+    field: Exclude<keyof LiveTimingDiagnostics, "totalFromLastChunkMs">,
+    timestamp = Date.now()
+  ) => {
+    if (!import.meta.env.DEV) return;
+    const next: LiveTimingDiagnostics = { ...liveTimingRef.current, [field]: timestamp };
+    if (field === "answerRenderedAt" && next.audioChunkCreatedAt !== undefined) {
+      next.totalFromLastChunkMs = timestamp - next.audioChunkCreatedAt;
+    }
+    liveTimingRef.current = next;
+    setLiveTimingDiagnostics(next);
+  }, []);
   const processRecognizedFragment = useCallback((rawText: string, source: LiveFragmentSource) => {
     const sanitized = sanitizeTranscript(rawText, settings.answerLanguage);
+    setTranscriptDecisionDiagnostics({
+      rawTranscript: rawText,
+      normalizedTranscript: sanitized.text,
+      sanitizerDecision: sanitized.shouldUse ? "accepted" : "rejected",
+      sanitizerReason: sanitized.reason,
+      technicalProtectionApplied: sanitized.technicalProtectionApplied,
+      duplicateDetected: false
+    });
 
     const shortLiveContinuation = settings.workMode === "live"
       && sanitized.reason === "too_short"
@@ -157,11 +260,12 @@ export function App() {
     if (!sanitized.shouldUse && sanitized.reason !== "incomplete" && !shortLiveContinuation) {
       setSttCleanupStatus("skipped");
       setRecognitionMessage(t("sttNoiseSkipped"));
+      if (settings.workMode === "live") transitionLiveProcessing("listening_started");
       return;
     }
 
     let candidate: SanitizedTranscript = shortLiveContinuation
-      ? { text: sanitized.text, shouldUse: true, reason: "accepted", quality: "short_technical" }
+      ? { text: sanitized.text, shouldUse: true, reason: "accepted", quality: "short_technical", technicalProtectionApplied: false }
       : sanitized;
     if (source === "microphone") {
       const pendingFragments = pendingMicrophoneFragmentsRef.current;
@@ -172,6 +276,7 @@ export function App() {
           pendingMicrophoneFragmentsRef.current = nextFragments;
           setSttCleanupStatus("waiting");
           setRecognitionMessage(t("sttWaitingMoreContext"));
+          transitionLiveProcessing("fragment_buffered");
           return;
         }
       } else if (pendingFragments.length > 0) {
@@ -180,6 +285,7 @@ export function App() {
           pendingMicrophoneFragmentsRef.current = [...pendingFragments, sanitized.text].slice(-2);
           setSttCleanupStatus(candidate.reason === "incomplete" ? "waiting" : "skipped");
           setRecognitionMessage(candidate.reason === "incomplete" ? t("sttWaitingMoreContext") : t("sttNoiseSkipped"));
+          transitionLiveProcessing(candidate.reason === "incomplete" ? "fragment_buffered" : "listening_started");
           return;
         }
       }
@@ -190,38 +296,83 @@ export function App() {
     const technicalText = normalizeTechnicalTerms(candidate.text);
     const acceptedText = technicalText.text;
     const normalizedCandidate = normalizeTranscriptForComparison(acceptedText);
-    const previousTranscript = lastAcceptedTranscriptRef.current;
-    if (!normalizedCandidate || normalizedCandidate === previousTranscript || previousTranscript.endsWith(normalizedCandidate)) {
+    if (!normalizedCandidate) {
       setSttCleanupStatus("skipped");
       setRecognitionMessage(t("sttNoiseSkipped"));
+      if (settings.workMode === "live") transitionLiveProcessing("listening_started");
       return;
     }
 
-    lastAcceptedTranscriptRef.current = normalizedCandidate;
+    const duplicateDetected = transcriptDuplicateTrackerRef.current.checkAndRemember(acceptedText);
+    setTranscriptDecisionDiagnostics({
+      rawTranscript: rawText,
+      normalizedTranscript: acceptedText,
+      sanitizerDecision: duplicateDetected ? "duplicate" : "accepted",
+      sanitizerReason: candidate.reason,
+      technicalProtectionApplied: candidate.technicalProtectionApplied,
+      duplicateDetected
+    });
+    if (duplicateDetected) {
+      setSttCleanupStatus("duplicate");
+      setRecognitionMessage(t("sttDuplicate"));
+      if (settings.workMode === "live") {
+        const processingStateBefore = liveProcessingStateRef.current;
+        transitionLiveProcessing("duplicate_detected");
+        setLiveDecisionDiagnostics((current) => current ? {
+          ...current,
+          processingStateBefore,
+          processingStateAfter: "duplicate",
+          answerInFlightBefore: answerRequestGateRef.current.isInFlight(),
+          answerInFlightAfter: answerRequestGateRef.current.isInFlight(),
+          duplicateKey: normalizedCandidate,
+          duplicateReason: "exact_transcript",
+          cooldownType: "none",
+          cooldownBlocked: false,
+          pendingRequestBefore: conversationContextRef.current.getPendingRequestText(),
+          pendingRequestAfter: conversationContextRef.current.getPendingRequestText(),
+          answerRendered: false,
+          returnedToListening: false
+        } : current);
+        scheduleReturnToListening(900);
+      }
+      return;
+    }
+
     setNormalizedTerms(getNormalizedTermTargets(technicalText.replacements));
     setRecognizedText((currentText) => appendRecognizedText(currentText, acceptedText));
     setSttCleanupStatus("accepted");
     setRecognitionMessage("");
     liveFragmentHandlerRef.current(acceptedText, source, candidate.text);
-  }, [settings.answerLanguage, settings.workMode, t]);
+  }, [scheduleReturnToListening, settings.answerLanguage, settings.workMode, t, transitionLiveProcessing]);
   const handleTranscript = useCallback((text: string) => {
     processRecognizedFragment(text, "microphone");
   }, [processRecognizedFragment]);
+  const handleTranscriptionStarted = useCallback((timestamp: number) => {
+    beginLiveTimingCycle(lastAudioChunkCreatedAtRef.current ?? timestamp);
+    markLiveTiming("transcriptionStartedAt", timestamp);
+    if (settings.workMode === "live") transitionLiveProcessing("transcription_started");
+  }, [beginLiveTimingCycle, markLiveTiming, settings.workMode, transitionLiveProcessing]);
+  const handleTranscriptionCompleted = useCallback((timestamp: number) => {
+    markLiveTiming("transcriptionCompletedAt", timestamp);
+  }, [markLiveTiming]);
   const chunkTranscription = useChunkTranscription({
     backendUrl,
     apiKey: settings.apiKey,
     language: settings.answerLanguage,
-    onTranscript: handleTranscript
+    onTranscript: handleTranscript,
+    onTranscriptionStarted: handleTranscriptionStarted,
+    onTranscriptionCompleted: handleTranscriptionCompleted
   });
+  const handleAudioChunk = useCallback((chunk: Blob) => {
+    lastAudioChunkCreatedAtRef.current = Date.now();
+    void chunkTranscription.transcribeChunk(chunk);
+  }, [chunkTranscription.transcribeChunk]);
   const microphoneRecorder = useMicrophoneRecorder({
-    onChunk: chunkTranscription.transcribeChunk,
+    onChunk: handleAudioChunk,
     enableAudioLevel: enableMicrophoneVisualizer
   });
   const liveTimerRef = useRef<number>();
-  const answeredFragmentsRef = useRef(new Set<string>());
-  const lastRenderedLiveFragmentRef = useRef("");
   const lastLiveAnswerAtRef = useRef(0);
-  const requestInFlightRef = useRef(false);
   const isMicrophoneActive = microphoneRecorder.status === "recording" || microphoneRecorder.status === "requesting_permission";
   const isListening = recognitionStatus === "listening" || isMicrophoneActive;
 
@@ -293,11 +444,15 @@ export function App() {
     preserveLocalAnswer = false
   ): Promise<boolean> => {
     const trimmedText = text.trim();
-    if (!trimmedText || requestInFlightRef.current) {
+    if (!trimmedText || !answerRequestGateRef.current.tryStart()) {
       return false;
     }
 
-    requestInFlightRef.current = true;
+    setLiveDecisionDiagnostics((current) => current ? {
+      ...current,
+      answerInFlightBefore: false,
+      answerInFlightAfter: true
+    } : current);
     setIsAsking(true);
     setError("");
     if (!preserveLocalAnswer) {
@@ -332,7 +487,11 @@ export function App() {
       setError(requestError instanceof Error ? requestError.message : t("permissionError"));
       return false;
     } finally {
-      requestInFlightRef.current = false;
+      answerRequestGateRef.current.finish();
+      setLiveDecisionDiagnostics((current) => current ? {
+        ...current,
+        answerInFlightAfter: false
+      } : current);
       setIsAsking(false);
     }
   }, [settings.answerLanguage, settings.answerMode, settings.apiKey, settings.model, t]);
@@ -342,6 +501,10 @@ export function App() {
       return;
     }
     void source;
+    const processingStateBefore = liveProcessingStateRef.current;
+    const answerInFlightBefore = answerRequestGateRef.current.isInFlight();
+    const pendingRequestBefore = conversationContextRef.current.getPendingRequestText();
+    transitionLiveProcessing("utterance_flushed");
 
     const contextDecision = conversationContextRef.current.add(fragment, Date.now(), settings.liveAssistSensitivity);
     setLiveContextStatus({
@@ -352,27 +515,41 @@ export function App() {
     const knowledgeFragment = contextDecision.decisionSource === "pending_context"
       ? contextDecision.pendingRequestText ?? fragment
       : fragment;
-    if (contextDecision.shouldAnswer && shouldSearchLocalKnowledge(settings.answerSourceMode)) {
+    const canAttemptLocalFastPath = settings.answerSourceMode === "local-only"
+      && contextDecision.intent === "answer_request"
+      && !contextDecision.shouldWait
+      && contextDecision.reason !== "duplicate";
+    const shouldRunLocalLookup = shouldSearchLocalKnowledge(settings.answerSourceMode)
+      && (contextDecision.shouldAnswer || canAttemptLocalFastPath);
+    if (shouldRunLocalLookup) {
       setRecognitionMessage(t("liveStatusSearchingLocal"));
+      transitionLiveProcessing("local_lookup_started");
+      markLiveTiming("localLookupStartedAt");
     }
-    const localLookup = contextDecision.shouldAnswer && shouldSearchLocalKnowledge(settings.answerSourceMode)
+    const localLookup = shouldRunLocalLookup
       ? lookupLocalKnowledge(knowledgeFragment, {
         aggregatedText: contextDecision.aggregatedText,
         currentTopic: contextDecision.currentTopic
       })
       : undefined;
+    if (localLookup) markLiveTiming("localLookupCompletedAt");
     const knowledgeMatches = localLookup?.matches ?? [];
-    const policyDecision = resolveLiveAssistDecision({
+    const localFastPath = shouldUseLocalOnlyFastPath(
+      settings.answerSourceMode,
       contextDecision,
+      knowledgeMatches.length > 0
+    );
+    const policyDecision = resolveLiveAssistDecision({
+      contextDecision: localFastPath
+        ? { ...contextDecision, shouldAnswer: true, reason: "answer" }
+        : contextDecision,
       answerSourceMode: settings.answerSourceMode,
       hasLocalMatch: knowledgeMatches.length > 0,
       hasApiKey: settings.apiKey.trim().length > 0,
       answerMode: settings.answerMode
     });
 
-    const isRenderedDuplicate = policyDecision.action === "duplicate"
-      && lastRenderedLiveFragmentRef.current === contextDecision.normalizedText;
-    if (!isRenderedDuplicate) setLiveDecisionDiagnostics(createLiveDecisionDiagnostics(
+    setLiveDecisionDiagnostics(createLiveDecisionDiagnostics(
       rawFragment,
       fragment,
       contextDecision,
@@ -380,41 +557,61 @@ export function App() {
       policyDecision.action,
       policyDecision.reason,
       knowledgeMatches,
-      localLookup
+      localLookup,
+      {
+        processingStateBefore,
+        processingStateAfter: liveProcessingStateRef.current,
+        answerInFlightBefore,
+        answerInFlightAfter: answerRequestGateRef.current.isInFlight(),
+        duplicateKey: policyDecision.action === "duplicate" ? contextDecision.normalizedText : undefined,
+        duplicateReason: policyDecision.action === "duplicate" ? "exact_answered_utterance" : undefined,
+        cooldownType: policyDecision.action === "cooldown" ? "topic" : "none",
+        cooldownBlocked: policyDecision.action === "cooldown",
+        pendingRequestBefore,
+        pendingRequestAfter: conversationContextRef.current.getPendingRequestText(),
+        returnedToListening: false
+      }
     ));
 
     if (policyDecision.action === "topic_intro") {
       setRecognitionMessage(t("liveStatusTopicDetected"));
+      returnToListeningNow();
       return;
     }
     if (policyDecision.action === "wait") {
       setRecognitionMessage(t("liveStatusWaiting"));
+      transitionLiveProcessing("fragment_buffered");
+      scheduleReturnToListening();
       return;
     }
     if (policyDecision.action === "duplicate") {
-      if (!isRenderedDuplicate) setRecognitionMessage(t("liveStatusDuplicate"));
+      setRecognitionMessage(t("sttDuplicate"));
+      transitionLiveProcessing("duplicate_detected");
+      scheduleReturnToListening(900);
       return;
     }
     if (policyDecision.action === "cooldown") {
       setRecognitionMessage(t("liveStatusCooldown"));
+      returnToListeningNow();
       return;
     }
     if (policyDecision.action === "ignore") {
       setRecognitionMessage(t("liveFragmentIgnored"));
+      returnToListeningNow();
       return;
     }
     if (policyDecision.action === "no_local_match") {
       conversationContextRef.current.clearPendingRequest();
       setRecognitionMessage(t("liveStatusNoLocalMatch"));
+      transitionLiveProcessing("local_match_missing");
+      scheduleReturnToListening();
       return;
     }
     if (policyDecision.action === "missing_api_key") {
       conversationContextRef.current.clearPendingRequest();
       setRecognitionMessage(t("liveStatusMissingApiKey"));
-      return;
-    }
-
-    if (answeredFragmentsRef.current.has(contextDecision.normalizedText)) {
+      transitionLiveProcessing("local_match_missing");
+      scheduleReturnToListening();
       return;
     }
 
@@ -424,16 +621,23 @@ export function App() {
     if (resolution === "local" || resolution === "local-and-gpt") {
       showLocalAnswer(knowledgeMatches);
       conversationContextRef.current.markAnswered(contextDecision);
-      answeredFragmentsRef.current.add(contextDecision.normalizedText);
-      lastRenderedLiveFragmentRef.current = contextDecision.normalizedText;
       lastLiveAnswerAtRef.current = Date.now();
       setLiveDecisionDiagnostics((current) => current ? { ...current, answerRendered: true } : current);
       setRecognitionMessage(resolution === "local" ? t("liveStatusLocalFound") : t("enrichingWithGpt"));
+      markLiveTiming("answerRenderedAt");
+      transitionLiveProcessing("answer_rendered");
+      setLiveDecisionDiagnostics((current) => current ? {
+        ...current,
+        processingStateAfter: "answered",
+        answerInFlightAfter: answerRequestGateRef.current.isInFlight(),
+        pendingRequestAfter: conversationContextRef.current.getPendingRequestText()
+      } : current);
     } else {
       setRecognitionMessage(t("utteranceCollectedSearching"));
     }
 
     if (resolution === "local") {
+      scheduleReturnToListening();
       return;
     }
 
@@ -442,26 +646,42 @@ export function App() {
     }
 
     const throttleDelay = Math.max(0, liveThrottleMs - (Date.now() - lastLiveAnswerAtRef.current));
+    setLiveDecisionDiagnostics((current) => current ? {
+      ...current,
+      cooldownType: throttleDelay > 0 ? "gpt" : "none",
+      cooldownBlocked: throttleDelay > 0
+    } : current);
+    transitionLiveProcessing("gpt_request_started");
     liveTimerRef.current = window.setTimeout(async () => {
       liveTimerRef.current = undefined;
       if (!resolution) return;
       lastLiveAnswerAtRef.current = Date.now();
 
+      markLiveTiming("gptRequestStartedAt");
       const sent = await requestAnswer(answerText, "live", resolution === "local-and-gpt");
+      markLiveTiming("gptRequestCompletedAt");
       if (!sent && resolution === "gpt") {
         conversationContextRef.current.clearPendingRequest();
-        answeredFragmentsRef.current.delete(contextDecision.normalizedText);
       } else if (resolution === "gpt") {
         conversationContextRef.current.markAnswered(contextDecision);
-        answeredFragmentsRef.current.add(contextDecision.normalizedText);
-        lastRenderedLiveFragmentRef.current = contextDecision.normalizedText;
       }
       if (sent) {
         setLiveDecisionDiagnostics((current) => current ? { ...current, answerRendered: true } : current);
+        markLiveTiming("answerRenderedAt");
+        transitionLiveProcessing("answer_rendered");
+      } else {
+        transitionLiveProcessing("processing_failed");
       }
       setRecognitionMessage("");
+      setLiveDecisionDiagnostics((current) => current ? {
+        ...current,
+        processingStateAfter: sent ? "answered" : "error",
+        answerInFlightAfter: answerRequestGateRef.current.isInFlight(),
+        pendingRequestAfter: conversationContextRef.current.getPendingRequestText()
+      } : current);
+      scheduleReturnToListening();
     }, Math.max(liveDebounceMs, throttleDelay));
-  }, [requestAnswer, settings.answerMode, settings.answerSourceMode, settings.apiKey, settings.liveAssistSensitivity, settings.workMode, showLocalAnswer, t]);
+  }, [markLiveTiming, requestAnswer, returnToListeningNow, scheduleReturnToListening, settings.answerMode, settings.answerSourceMode, settings.apiKey, settings.liveAssistSensitivity, settings.workMode, showLocalAnswer, t, transitionLiveProcessing]);
 
   const flushBufferedUtterance = useCallback((now = Date.now()) => {
     if (utteranceTimerRef.current !== undefined) {
@@ -477,9 +697,11 @@ export function App() {
       flushedText: flushed.text,
       flushReason: flushed.reason
     });
+    markLiveTiming("utteranceFlushedAt", now);
+    transitionLiveProcessing("utterance_flushed");
     setRecognitionMessage(t("utteranceCollectedSearching"));
     queueLiveAnswer(flushed.text, utteranceSourceRef.current, flushed.fragments.join(" | "));
-  }, [queueLiveAnswer, t]);
+  }, [markLiveTiming, queueLiveAnswer, t, transitionLiveProcessing]);
 
   const bufferLiveFragment = useCallback((fragment: string, source: LiveFragmentSource) => {
     if (settings.workMode !== "live") return;
@@ -503,13 +725,14 @@ export function App() {
       return;
     }
 
+    transitionLiveProcessing("fragment_buffered");
     setRecognitionMessage(t("utteranceCollecting"));
     utteranceTimerRef.current = window.setTimeout(() => {
       if (utteranceBufferRef.current.shouldFlush(Date.now())) {
         flushBufferedUtterance(Date.now());
       }
-    }, 1_550);
-  }, [flushBufferedUtterance, settings.workMode, t]);
+    }, 950);
+  }, [flushBufferedUtterance, settings.workMode, t, transitionLiveProcessing]);
 
   liveFragmentHandlerRef.current = bufferLiveFragment;
 
@@ -523,7 +746,8 @@ export function App() {
     setRecognitionMessage("");
     setSttCleanupStatus("idle");
     pendingMicrophoneFragmentsRef.current = [];
-    lastAcceptedTranscriptRef.current = "";
+    transcriptDuplicateTrackerRef.current.clear();
+    setTranscriptDecisionDiagnostics(undefined);
     setNormalizedTerms([]);
     utteranceBufferRef.current.clear();
     setUtteranceDiagnostics({ pendingText: "", flushedText: "" });
@@ -532,16 +756,34 @@ export function App() {
       utteranceTimerRef.current = undefined;
     }
     conversationContextRef.current.clear();
-    answeredFragmentsRef.current.clear();
-    lastRenderedLiveFragmentRef.current = "";
+    answerRequestGateRef.current.reset();
     setLiveContextStatus({ currentTopic: null, fragmentCount: 0 });
-  }, [settings.answerLanguage, settings.speechToTextProvider, speechToTextProvider, microphoneRecorder.stop, chunkTranscription.stopSession]);
+    transitionLiveProcessing("reset");
+    if (processingSettleTimerRef.current !== undefined) {
+      window.clearTimeout(processingSettleTimerRef.current);
+      processingSettleTimerRef.current = undefined;
+    }
+    if (liveTimerRef.current !== undefined) {
+      window.clearTimeout(liveTimerRef.current);
+      liveTimerRef.current = undefined;
+    }
+  }, [settings.answerLanguage, settings.speechToTextProvider, speechToTextProvider, microphoneRecorder.stop, chunkTranscription.stopSession, transitionLiveProcessing]);
+  useEffect(() => {
+    if (settings.workMode !== "live") return;
+    if (chunkTranscription.status === "error" || chunkTranscription.status === "missing_api_key") {
+      transitionLiveProcessing("processing_failed");
+      scheduleReturnToListening();
+    }
+  }, [chunkTranscription.status, scheduleReturnToListening, settings.workMode, transitionLiveProcessing]);
   useEffect(() => () => {
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
     }
     if (utteranceTimerRef.current !== undefined) {
       window.clearTimeout(utteranceTimerRef.current);
+    }
+    if (processingSettleTimerRef.current !== undefined) {
+      window.clearTimeout(processingSettleTimerRef.current);
     }
   }, []);
 
@@ -552,6 +794,7 @@ export function App() {
     pendingMicrophoneFragmentsRef.current = [];
     utteranceBufferRef.current.clear();
     setUtteranceDiagnostics({ pendingText: "", flushedText: "" });
+    if (settings.workMode === "live") transitionLiveProcessing("listening_started");
     if (utteranceTimerRef.current !== undefined) {
       window.clearTimeout(utteranceTimerRef.current);
       utteranceTimerRef.current = undefined;
@@ -589,6 +832,16 @@ export function App() {
       window.clearTimeout(utteranceTimerRef.current);
       utteranceTimerRef.current = undefined;
     }
+    transitionLiveProcessing("reset");
+    answerRequestGateRef.current.reset();
+    if (processingSettleTimerRef.current !== undefined) {
+      window.clearTimeout(processingSettleTimerRef.current);
+      processingSettleTimerRef.current = undefined;
+    }
+    if (liveTimerRef.current !== undefined) {
+      window.clearTimeout(liveTimerRef.current);
+      liveTimerRef.current = undefined;
+    }
   }
 
   function clearRecognizedText() {
@@ -596,16 +849,20 @@ export function App() {
     setRecognitionMessage("");
     setSttCleanupStatus("idle");
     pendingMicrophoneFragmentsRef.current = [];
-    lastAcceptedTranscriptRef.current = "";
+    transcriptDuplicateTrackerRef.current.clear();
+    setTranscriptDecisionDiagnostics(undefined);
     setNormalizedTerms([]);
     setLiveDecisionDiagnostics(undefined);
     setUtteranceDiagnostics({ pendingText: "", flushedText: "" });
-    answeredFragmentsRef.current.clear();
-    lastRenderedLiveFragmentRef.current = "";
     utteranceBufferRef.current.clear();
     conversationContextRef.current.clear();
     setLiveContextStatus({ currentTopic: null, fragmentCount: 0 });
     lastLiveAnswerAtRef.current = 0;
+    answerRequestGateRef.current.reset();
+    transitionLiveProcessing("reset");
+    liveTimingRef.current = {};
+    lastAudioChunkCreatedAtRef.current = undefined;
+    setLiveTimingDiagnostics({});
     if (liveTimerRef.current !== undefined) {
       window.clearTimeout(liveTimerRef.current);
       liveTimerRef.current = undefined;
@@ -613,6 +870,10 @@ export function App() {
     if (utteranceTimerRef.current !== undefined) {
       window.clearTimeout(utteranceTimerRef.current);
       utteranceTimerRef.current = undefined;
+    }
+    if (processingSettleTimerRef.current !== undefined) {
+      window.clearTimeout(processingSettleTimerRef.current);
+      processingSettleTimerRef.current = undefined;
     }
   }
 
@@ -726,6 +987,12 @@ export function App() {
         <span className={settings.workMode === "live" ? "mode-badge live-badge" : "mode-badge"}>
           {settings.workMode === "live" ? t("liveMode") : t("manualMode")}
         </span>
+        {settings.workMode === "live" ? (
+          <span className={`live-processing-state live-processing-${liveProcessingState}`} aria-live="polite">
+            <span aria-hidden="true" />
+            {getLiveProcessingStateText(liveProcessingState, t)}
+          </span>
+        ) : null}
         {settings.speechToTextProvider === "mock" ? <span className="mode-badge simulated-badge">{t("mockStt")} · {t("simulatedMode")}</span> : null}
         {settings.speechToTextProvider === "microphone" ? <span className="mode-badge recording-badge">{t("microphoneCapture")}</span> : null}
         {settings.answerSourceMode === "local-only" ? <span className="mode-badge">{t("localOnlyModeStatus")}</span> : null}
@@ -794,10 +1061,16 @@ export function App() {
               </button>
             </div>
           ) : null}
-          {import.meta.env.DEV && showDiagnostics && settings.workMode === "live" && (liveDecisionDiagnostics || utteranceDiagnostics.pendingText || utteranceDiagnostics.flushedText) ? (
+          {import.meta.env.DEV && showDiagnostics && settings.workMode === "live" && (transcriptDecisionDiagnostics || liveDecisionDiagnostics || utteranceDiagnostics.pendingText || utteranceDiagnostics.flushedText) ? (
             <div className="stt-diagnostics live-decision-diagnostics" id="recognized-panel-diagnostics">
               <strong>Диагностика Live Assist</strong>
               <div className="stt-diagnostics-grid">
+                <span>sanitizer: сырой текст</span><code>{transcriptDecisionDiagnostics?.rawTranscript || "—"}</code>
+                <span>sanitizer: нормализованный</span><code>{transcriptDecisionDiagnostics?.normalizedTranscript || "—"}</code>
+                <span>sanitizer: решение</span><code>{transcriptDecisionDiagnostics?.sanitizerDecision || "—"}</code>
+                <span>sanitizer: причина</span><code>{transcriptDecisionDiagnostics?.sanitizerReason || "—"}</code>
+                <span>защита тех. вопроса</span><code>{String(transcriptDecisionDiagnostics?.technicalProtectionApplied ?? false)}</code>
+                <span>точный повтор</span><code>{String(transcriptDecisionDiagnostics?.duplicateDetected ?? false)}</code>
                 <span>собираемая фраза</span><code>{utteranceDiagnostics.pendingText || "—"}</code>
                 <span>собранная фраза</span><code>{utteranceDiagnostics.flushedText || "—"}</code>
                 <span>причина flush</span><code>{utteranceDiagnostics.flushReason ?? "—"}</code>
@@ -823,9 +1096,30 @@ export function App() {
                 <span>ответ показан</span><code>{String(liveDecisionDiagnostics?.answerRendered ?? false)}</code>
                 <span>решение</span><code>{liveDecisionDiagnostics?.decision ?? "—"}</code>
                 <span>источник решения</span><code>{liveDecisionDiagnostics?.decisionSource ?? "—"}</code>
+                <span>processing state до</span><code>{liveDecisionDiagnostics?.processingStateBefore ?? "—"}</code>
+                <span>processing state после</span><code>{liveDecisionDiagnostics?.processingStateAfter ?? "—"}</code>
+                <span>answer in flight до</span><code>{String(liveDecisionDiagnostics?.answerInFlightBefore ?? false)}</code>
+                <span>answer in flight после</span><code>{String(liveDecisionDiagnostics?.answerInFlightAfter ?? false)}</code>
+                <span>duplicate key</span><code>{liveDecisionDiagnostics?.duplicateKey ?? "—"}</code>
+                <span>duplicate reason</span><code>{liveDecisionDiagnostics?.duplicateReason ?? "—"}</code>
+                <span>тип cooldown</span><code>{liveDecisionDiagnostics?.cooldownType ?? "none"}</code>
+                <span>cooldown blocked</span><code>{String(liveDecisionDiagnostics?.cooldownBlocked ?? false)}</code>
+                <span>pending request до</span><code>{liveDecisionDiagnostics?.pendingRequestBefore ?? "—"}</code>
+                <span>pending request после</span><code>{liveDecisionDiagnostics?.pendingRequestAfter ?? "—"}</code>
+                <span>вернулся к listening</span><code>{String(liveDecisionDiagnostics?.returnedToListening ?? false)}</code>
                 <span>ожидающий запрос</span><code>{liveDecisionDiagnostics?.pendingRequestText ?? "—"}</code>
                 <span>причина</span><code>{liveDecisionDiagnostics?.reason ?? "—"}</code>
                 <span>осталось паузы</span><code>{formatCooldown(liveDecisionDiagnostics?.cooldownRemainingMs ?? 0)}</code>
+                <span>аудиочанк создан</span><code>{formatLiveTimingTimestamp(liveTimingDiagnostics.audioChunkCreatedAt)}</code>
+                <span>транскрипция начата</span><code>{formatLiveTimingTimestamp(liveTimingDiagnostics.transcriptionStartedAt)}</code>
+                <span>транскрипция завершена</span><code>{formatLiveTimingTimestamp(liveTimingDiagnostics.transcriptionCompletedAt)}</code>
+                <span>фраза собрана</span><code>{formatLiveTimingTimestamp(liveTimingDiagnostics.utteranceFlushedAt)}</code>
+                <span>local lookup начат</span><code>{formatLiveTimingTimestamp(liveTimingDiagnostics.localLookupStartedAt)}</code>
+                <span>local lookup завершен</span><code>{formatLiveTimingTimestamp(liveTimingDiagnostics.localLookupCompletedAt)}</code>
+                <span>GPT запрос начат</span><code>{formatLiveTimingTimestamp(liveTimingDiagnostics.gptRequestStartedAt)}</code>
+                <span>GPT запрос завершен</span><code>{formatLiveTimingTimestamp(liveTimingDiagnostics.gptRequestCompletedAt)}</code>
+                <span>ответ показан в</span><code>{formatLiveTimingTimestamp(liveTimingDiagnostics.answerRenderedAt)}</code>
+                <span>от последнего чанка до ответа</span><code>{liveTimingDiagnostics.totalFromLastChunkMs !== undefined ? `${liveTimingDiagnostics.totalFromLastChunkMs} мс` : "—"}</code>
               </div>
             </div>
           ) : null}
@@ -839,7 +1133,7 @@ export function App() {
                 <span className={chunkTranscription.status === "error" || chunkTranscription.status === "missing_api_key" ? "recorder-warning" : "transcription-status"}>
                   {t("transcriptionStatus")}: {getTranscriptionStatusText(chunkTranscription.status, t)}
                 </span>
-                <span className={sttCleanupStatus === "skipped" ? "recorder-warning" : "transcription-status"}>
+                <span className={sttCleanupStatus === "skipped" || sttCleanupStatus === "duplicate" ? "recorder-warning" : "transcription-status"}>
                   {t("sttCleanupStatus")}: {getSttCleanupStatusText(sttCleanupStatus, t)}
                 </span>
               </div>
@@ -864,6 +1158,7 @@ export function App() {
                         <span>тип чанка</span><code>{chunkTranscription.diagnostics.chunkMimeType}</code>
                         <span>ключ передан</span><code>{String(chunkTranscription.diagnostics.apiKeyPresent)}</code>
                         <span>запрос начат</span><code>{formatDiagnosticTimestamp(chunkTranscription.diagnostics.requestStartedAt)}</code>
+                        <span>запрос завершен</span><code>{chunkTranscription.diagnostics.requestCompletedAt ? formatDiagnosticTimestamp(chunkTranscription.diagnostics.requestCompletedAt) : "—"}</code>
                         <span>статус ответа</span><code>{chunkTranscription.diagnostics.responseStatus ?? "—"}</code>
                         <span>ошибка</span><code>{chunkTranscription.diagnostics.error ?? "—"}</code>
                       </div>
@@ -984,7 +1279,19 @@ function createLiveDecisionDiagnostics(
   decision: LiveAssistAction,
   reason: string,
   knowledgeMatches: KnowledgeCard[],
-  localLookup?: ReturnType<typeof lookupLocalKnowledge>
+  localLookup: ReturnType<typeof lookupLocalKnowledge> | undefined,
+  lifecycle: Pick<LiveDecisionDiagnostics,
+    | "processingStateBefore"
+    | "processingStateAfter"
+    | "answerInFlightBefore"
+    | "answerInFlightAfter"
+    | "duplicateKey"
+    | "duplicateReason"
+    | "cooldownType"
+    | "cooldownBlocked"
+    | "pendingRequestBefore"
+    | "pendingRequestAfter"
+    | "returnedToListening">
 ): LiveDecisionDiagnostics {
   const matchedCard = knowledgeMatches[0];
   return {
@@ -1013,7 +1320,8 @@ function createLiveDecisionDiagnostics(
     localScoreThreshold: localLookup?.scoreThreshold ?? 0,
     localTopicContextAdded: localLookup?.topicContextAdded ?? false,
     localQuerySource: localLookup?.querySource,
-    localSelectionReason: localLookup?.selectionReason
+    localSelectionReason: localLookup?.selectionReason,
+    ...lifecycle
   };
 }
 
@@ -1145,6 +1453,7 @@ function getSttCleanupStatusText(
 ): string {
   if (status === "accepted") return t("sttCleanupAccepted");
   if (status === "skipped") return t("sttCleanupSkipped");
+  if (status === "duplicate") return t("sttCleanupDuplicate");
   if (status === "waiting") return t("sttCleanupWaiting");
   return t("sttCleanupIdle");
 }
@@ -1152,6 +1461,27 @@ function getSttCleanupStatusText(
 function formatDiagnosticTimestamp(timestamp: string): string {
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? timestamp : date.toLocaleTimeString("ru-RU");
+}
+
+function formatLiveTimingTimestamp(timestamp: number | undefined): string {
+  return timestamp === undefined ? "—" : new Date(timestamp).toLocaleTimeString("ru-RU", { hour12: false });
+}
+
+function getLiveProcessingStateText(
+  state: LiveProcessingState,
+  t: ReturnType<typeof createTranslator>
+): string {
+  if (state === "listening") return t("liveStateListening");
+  if (state === "transcribing") return t("liveStateTranscribing");
+  if (state === "collecting") return t("liveStateCollecting");
+  if (state === "deciding") return t("liveStateDeciding");
+  if (state === "searching_local") return t("liveStateSearchingLocal");
+  if (state === "requesting_gpt") return t("liveStateRequestingGpt");
+  if (state === "answered") return t("liveStateAnswered");
+  if (state === "duplicate") return t("sttDuplicate");
+  if (state === "no_match") return t("liveStateNoMatch");
+  if (state === "error") return t("liveStateError");
+  return t("liveStateIdle");
 }
 
 function getTopicDisplayName(topic: TechnicalTopic, language: AppLanguage): string {

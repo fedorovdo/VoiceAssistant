@@ -14,6 +14,7 @@ export interface TranscriptionDiagnostics {
   chunkMimeType: string;
   apiKeyPresent: boolean;
   requestStartedAt: string;
+  requestCompletedAt?: string;
   responseStatus?: number;
   error?: string;
 }
@@ -23,6 +24,8 @@ interface UseChunkTranscriptionOptions {
   apiKey: string;
   language: AppLanguage;
   onTranscript: (text: string) => void;
+  onTranscriptionStarted?: (timestamp: number) => void;
+  onTranscriptionCompleted?: (timestamp: number) => void;
 }
 
 export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
@@ -32,12 +35,16 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
   const sessionRef = useRef(0);
   const abortControllerRef = useRef<AbortController>();
   const onTranscriptRef = useRef(onTranscript);
+  const onTranscriptionStartedRef = useRef(options.onTranscriptionStarted);
+  const onTranscriptionCompletedRef = useRef(options.onTranscriptionCompleted);
   const [status, setStatus] = useState<TranscriptionStatus>("idle");
   const [diagnostics, setDiagnostics] = useState<TranscriptionDiagnostics>();
 
   useEffect(() => {
     onTranscriptRef.current = onTranscript;
-  }, [onTranscript]);
+    onTranscriptionStartedRef.current = options.onTranscriptionStarted;
+    onTranscriptionCompletedRef.current = options.onTranscriptionCompleted;
+  }, [onTranscript, options.onTranscriptionCompleted, options.onTranscriptionStarted]);
 
   const stopSession = useCallback(() => {
     activeRef.current = false;
@@ -79,12 +86,14 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
     abortControllerRef.current = controller;
     inFlightRef.current = true;
     setStatus("transcribing");
+    const requestStartedAt = Date.now();
+    onTranscriptionStartedRef.current?.(requestStartedAt);
     if (import.meta.env.DEV) {
       setDiagnostics({
         chunkSize: chunk.size,
         chunkMimeType: chunk.type || "unknown",
         apiKeyPresent: true,
-        requestStartedAt: new Date().toISOString()
+        requestStartedAt: new Date(requestStartedAt).toISOString()
       });
     }
 
@@ -101,10 +110,12 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
       });
       const responseBody = await response.text();
       const data = parseTranscriptionResponse(responseBody);
+      const requestCompletedAt = Date.now();
 
       if (import.meta.env.DEV) {
         setDiagnostics((current) => current ? {
           ...current,
+          requestCompletedAt: new Date(requestCompletedAt).toISOString(),
           responseStatus: response.status,
           error: response.ok ? undefined : sanitizeDiagnosticMessage(data.error)
         } : current);
@@ -128,6 +139,8 @@ export function useChunkTranscription(options: UseChunkTranscriptionOptions) {
       if (session !== sessionRef.current || !activeRef.current) {
         return;
       }
+
+      onTranscriptionCompletedRef.current?.(requestCompletedAt);
 
       const text = data.text?.trim();
       if (text) {

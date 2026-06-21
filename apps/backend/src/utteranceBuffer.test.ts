@@ -4,6 +4,7 @@ import {
   ConversationContextBuffer,
   findLiveKnowledgeCards,
   resolveLiveAssistDecision,
+  shouldUseLocalOnlyFastPath,
   UtteranceBuffer
 } from "@voiceassistant/shared";
 
@@ -56,6 +57,77 @@ test("complete Dockerfile questions flush immediately", () => {
     assert.equal(update.shouldFlush, true, phrase);
     assert.equal(update.flushReason, "strong_punctuation", phrase);
   }
+});
+
+test("complete technical action questions flush immediately", () => {
+  for (const phrase of [
+    "Как поменять пароль в Linux?",
+    "Как проверить порты в Linux?",
+    "Что такое Dockerfile?",
+    "Как добавить пользователя в Active Directory?"
+  ]) {
+    const update = new UtteranceBuffer().addFragment(phrase, 1_000);
+    assert.equal(update.shouldFlush, true, phrase);
+    assert.equal(update.flushReason, "strong_punctuation", phrase);
+  }
+});
+
+test("incomplete fragments wait and complete unpunctuated text uses shorter idle timeout", () => {
+  for (const phrase of ["Как проверить...", "Как добавить...", "В Linux...", "Например...", "Команда для..."]) {
+    assert.equal(new UtteranceBuffer().addFragment(phrase, 1_000).shouldFlush, false, phrase);
+  }
+
+  const complete = new UtteranceBuffer();
+  complete.addFragment("Как поменять пароль в Linux", 1_000);
+  assert.equal(complete.shouldFlush(1_899), false);
+  assert.equal(complete.shouldFlush(1_900), true);
+});
+
+test("local-only fast path bypasses topic cooldown but not exact duplicates", () => {
+  assert.equal(shouldUseLocalOnlyFastPath("local-only", {
+    intent: "answer_request",
+    reason: "topic_cooldown",
+    shouldWait: false
+  }, true), true);
+  assert.equal(shouldUseLocalOnlyFastPath("local-only", {
+    intent: "answer_request",
+    reason: "duplicate",
+    shouldWait: false
+  }, true), false);
+  assert.equal(shouldUseLocalOnlyFastPath("local-plus-gpt", {
+    intent: "answer_request",
+    reason: "topic_cooldown",
+    shouldWait: false
+  }, true), false);
+
+  const context = new ConversationContextBuffer({ topicCooldownMs: 30_000 });
+  const first = context.add("Как проверить порт в Linux?", 1_000, "balanced");
+  context.markAnswered(first, 1_000);
+  const followUp = context.add("Как проверить порт в Linux сейчас?", 2_000, "balanced");
+  const matches = findLiveKnowledgeCards(
+    "Как проверить порт в Linux сейчас?",
+    followUp.aggregatedText,
+    followUp.currentTopic
+  );
+
+  assert.equal(followUp.reason, "topic_cooldown");
+  assert.equal(matches[0]?.id, "linux-open-ports");
+  assert.equal(shouldUseLocalOnlyFastPath("local-only", followUp, matches.length > 0), true);
+});
+
+test("explicit Linux question overrides stale Docker topic for local lookup", () => {
+  const context = new ConversationContextBuffer();
+  context.add("Что такое Docker?", 1_000, "balanced");
+  const linuxDecision = context.add("Как поменять пароль в Linux?", 2_000, "balanced");
+  const matches = findLiveKnowledgeCards(
+    "Как поменять пароль в Linux?",
+    linuxDecision.aggregatedText,
+    linuxDecision.currentTopic
+  );
+
+  assert.equal(linuxDecision.currentTopic, "Linux");
+  assert.equal(linuxDecision.shouldAnswer, true);
+  assert.equal(matches[0]?.id, "linux-change-password");
 });
 
 test("complete Dockerfile question without punctuation flushes after idle timeout", () => {

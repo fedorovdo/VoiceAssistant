@@ -67,6 +67,7 @@ export interface ConversationContextOptions {
   maxFragments?: number;
   topicCooldownMs?: number;
   pendingRequestMaxAgeMs?: number;
+  duplicateWindowMs?: number;
 }
 
 interface PendingAnswerRequest {
@@ -125,6 +126,8 @@ const explanatoryIntentPatterns = [
 const commandIntentPatterns = [
   /как (?:проверить|настроить|посмотреть|узнать|найти|запустить|остановить|перезапустить|сделать|собрать|пересобрать|повысить|изменить|поменять|сменить|дать|добавить)/i,
   /(?:сбросить|сменить)\s+парол/i,
+  /(?:менять|меняем|заменить|замена)\s+парол/i,
+  /команд[аы]?\s+для\s+замены\s+парол/i,
   /^\s*(?:passwd|chage)\b/i,
   /(?:какая|какой|какую) команд[ауой]/i,
   /команда для/i,
@@ -173,6 +176,7 @@ export class ConversationContextBuffer {
   private readonly maxFragments: number;
   private readonly topicCooldownMs: number;
   private readonly pendingRequestMaxAgeMs: number;
+  private readonly duplicateWindowMs: number;
   private fragments: ConversationFragment[] = [];
   private answeredFragments = new Map<string, number>();
   private lastTopicAnswers = new Map<TechnicalTopic, { timestamp: number; normalizedText: string }>();
@@ -183,6 +187,7 @@ export class ConversationContextBuffer {
     this.maxFragments = options.maxFragments ?? 10;
     this.topicCooldownMs = options.topicCooldownMs ?? 30_000;
     this.pendingRequestMaxAgeMs = options.pendingRequestMaxAgeMs ?? 25_000;
+    this.duplicateWindowMs = options.duplicateWindowMs ?? 30_000;
   }
 
   add(text: string, timestamp = Date.now(), sensitivity: LiveAssistSensitivity = "balanced"): LiveContextDecision {
@@ -301,6 +306,10 @@ export class ConversationContextBuffer {
     this.pendingRequest = undefined;
   }
 
+  getPendingRequestText(): string | undefined {
+    return this.pendingRequest?.text;
+  }
+
   getSnapshot(timestamp = Date.now()): ConversationContextSnapshot {
     this.prune(timestamp);
     const newestFragment = this.fragments.at(-1);
@@ -364,11 +373,12 @@ export class ConversationContextBuffer {
 
   private prune(timestamp: number) {
     const oldestAllowed = timestamp - this.maxAgeMs;
+    const duplicateOldestAllowed = timestamp - this.duplicateWindowMs;
     this.fragments = this.fragments
       .filter((fragment) => fragment.timestamp >= oldestAllowed)
       .slice(-this.maxFragments);
     for (const [fragment, answeredAt] of this.answeredFragments) {
-      if (answeredAt < oldestAllowed) {
+      if (answeredAt < duplicateOldestAllowed) {
         this.answeredFragments.delete(fragment);
       }
     }

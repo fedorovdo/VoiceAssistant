@@ -37,3 +37,26 @@ test("sanitizeTranscript collapses repeated whitespace", () => {
   const result = sanitizeTranscript("  Что   такое\n\nDocker image?  ", "ru");
   assert.equal(result.text, "Что такое\nDocker image?");
 });
+
+test("sanitizeTranscript protects complete technical password questions", () => {
+  const variants = [
+    "Как поменять пароль Linux?",
+    "Как поменять пароль в Linux?",
+    "Как изменить пароль пользователя Linux?",
+    "Как сменить пароль?",
+    "Поменять пароль пользователю в Linux"
+  ];
+
+  for (const phrase of variants) {
+    const result = sanitizeTranscript(phrase, "ru");
+    assert.equal(result.shouldUse, true, phrase);
+    assert.equal(result.reason, "accepted", phrase);
+  }
+  assert.equal(sanitizeTranscript("Как поменять пароль Linux?", "ru").technicalProtectionApplied, true);
+});
+
+test("sanitizeTranscript keeps genuinely incomplete password fragments waiting", () => {
+  const result = sanitizeTranscript("Пароль...", "ru");
+  assert.equal(result.shouldUse, false);
+  assert.equal(result.reason, "incomplete");
+});

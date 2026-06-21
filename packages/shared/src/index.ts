@@ -44,6 +44,7 @@ export interface DesktopSettings {
 export * from "./liveAssist.js";
 export * from "./knowledgeCards.js";
 export * from "./transcriptSanitizer.js";
+export * from "./transcriptDuplicate.js";
 export * from "./answerSource.js";
 export * from "./desktopSettings.js";
 export * from "./conversationContext.js";
@@ -51,3 +52,4 @@ export * from "./technicalTermNormalizer.js";
 export * from "./liveAssistDecision.js";
 export * from "./utteranceBuffer.js";
 export * from "./localKnowledgeRegressionCases.js";
+export * from "./liveProcessing.js";

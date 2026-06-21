@@ -86,6 +86,18 @@ export interface LocalKnowledgeLookupContext {
   currentTopic?: LiveContextDecision["currentTopic"];
 }
 
+export function shouldUseLocalOnlyFastPath(
+  answerSourceMode: AnswerSourceMode,
+  contextDecision: Pick<LiveContextDecision, "intent" | "reason" | "shouldWait">,
+  hasLocalMatch: boolean
+): boolean {
+  return answerSourceMode === "local-only"
+    && hasLocalMatch
+    && contextDecision.intent === "answer_request"
+    && !contextDecision.shouldWait
+    && contextDecision.reason !== "duplicate";
+}
+
 export type LocalKnowledgeQuerySource = "newest_fragment" | "topic_context" | "aggregated_context";
 
 export interface LocalKnowledgeLookupResult extends KnowledgeCardLookupResult {

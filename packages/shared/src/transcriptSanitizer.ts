@@ -15,6 +15,7 @@ export interface SanitizedTranscript {
   shouldUse: boolean;
   reason: TranscriptSanitizationReason;
   quality: TranscriptQuality;
+  technicalProtectionApplied: boolean;
 }
 
 const fillerPhrases = [
@@ -55,6 +56,15 @@ const strongTechnicalTerms = [
   "tracert",
   "nslookup",
   "linux",
+  "git",
+  "passwd",
+  "password",
+  "пароль",
+  "порт",
+  "порты",
+  "user",
+  "пользователь",
+  "пользователю",
   "dhcp",
   "dns",
   "nat"
@@ -82,6 +92,12 @@ const incompleteQuestionStarts = [
   "what does"
 ];
 
+const technicalActionPatterns = [
+  /^(?:как\s+)?(?:поменять|изменить|сменить|проверить|добавить|настроить|перезапустить)(?:\s|$)/i,
+  /^(?:что\s+такое|из\s+чего\s+состоит)(?:\s|$)/i,
+  /^(?:how\s+to\s+)?(?:change|reset)\s+(?:a\s+)?password(?:\s|$)/i
+];
+
 export function sanitizeTranscript(text: string, language: TranscriptLanguage): SanitizedTranscript {
   const cleanedText = cleanupWhitespace(text);
   const normalizedText = normalize(cleanedText);
@@ -103,16 +119,20 @@ export function sanitizeTranscript(text: string, language: TranscriptLanguage): 
     return rejected(cleanedText, "filler");
   }
 
-  if (isLikelyIncomplete(normalizedText, cleanedText, hasTechnicalTerm)) {
+  const wordCount = normalizedText.split(" ").filter(Boolean).length;
+  const technicalProtectionApplied = hasTechnicalTerm
+    && hasTechnicalActionPattern(normalizedText)
+    && (/[?.!]$/.test(cleanedText) || wordCount >= 5);
+  if (isLikelyIncomplete(normalizedText, cleanedText, hasTechnicalTerm) && !technicalProtectionApplied) {
     return {
       text: cleanedText,
       shouldUse: false,
       reason: "incomplete",
-      quality: "incomplete"
+      quality: "incomplete",
+      technicalProtectionApplied: false
     };
   }
 
-  const wordCount = normalizedText.split(" ").filter(Boolean).length;
   if ((normalizedText.length < 8 || wordCount < 2) && !hasTechnicalTerm) {
     return rejected(cleanedText, "too_short");
   }
@@ -121,7 +141,8 @@ export function sanitizeTranscript(text: string, language: TranscriptLanguage): 
     text: cleanedText,
     shouldUse: true,
     reason: "accepted",
-    quality: hasTechnicalTerm && wordCount <= 3 ? "short_technical" : "clean"
+    quality: hasTechnicalTerm && wordCount <= 3 ? "short_technical" : "clean",
+    technicalProtectionApplied
   };
 }
 
@@ -150,12 +171,18 @@ function containsTechnicalTerm(text: string): boolean {
   return strongTechnicalTerms.some((term) => containsPhrase(text, term));
 }
 
+function hasTechnicalActionPattern(text: string): boolean {
+  return technicalActionPatterns.some((pattern) => pattern.test(text));
+}
+
 function containsPhrase(text: string, phrase: string): boolean {
   return ` ${text} `.includes(` ${phrase} `);
 }
 
 function isLikelyIncomplete(text: string, originalText: string, hasTechnicalTerm: boolean): boolean {
   const words = text.split(" ").filter(Boolean);
+  if (/^(?:как|how|what)$/.test(text)) return true;
+  if (/(?:\.\.\.|…)\s*$/.test(originalText) && words.length <= 4) return true;
   const lastWord = words.at(-1) ?? "";
   if (danglingEndings.includes(lastWord)) return true;
 
@@ -175,5 +202,5 @@ function hasUnsupportedScriptMajority(text: string): boolean {
 }
 
 function rejected(text: string, reason: Exclude<TranscriptSanitizationReason, "accepted" | "incomplete">): SanitizedTranscript {
-  return { text, shouldUse: false, reason, quality: "noise" };
+  return { text, shouldUse: false, reason, quality: "noise", technicalProtectionApplied: false };
 }
