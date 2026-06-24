@@ -110,7 +110,8 @@ function stopPackagedBackend() {
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
-  app.quit();
+  console.log("VoiceAssistant is already running.");
+  app.exit(0);
 } else {
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);

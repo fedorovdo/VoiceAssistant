@@ -10,10 +10,10 @@
   "scripts": {
     "dev:backend": "npm run dev -w @voiceassistant/backend",
     "dev:desktop": "npm run dev -w @voiceassistant/desktop",
-    "dev:all": "concurrently -k -n backend,desktop -c cyan,magenta \"npm run dev:backend\" \"npm run dev:desktop\"",
+    "dev:all": "node scripts/dev-supervisor.mjs",
     "stop:dev": "powershell -ExecutionPolicy Bypass -File scripts/stop-dev.ps1",
     "check:ports": "powershell -ExecutionPolicy Bypass -File scripts/check-ports.ps1",
-    "verify": "npm run test:knowledge && npm run test:backend && npm run build",
+    "verify": "npm run test:knowledge && npm run test:launcher && npm run test:backend && npm run build",
     "verify:win": "powershell -ExecutionPolicy Bypass -File scripts/verify.ps1",
     "build": "npm run build -w @voiceassistant/shared && npm run build -w @voiceassistant/backend && npm run build -w @voiceassistant/desktop",
     "build:packaged-backend": "node scripts/build-packaged-backend.mjs",
@@ -21,6 +21,7 @@
     "build:desktop": "npm run build -w @voiceassistant/desktop",
     "test:backend": "npm run test -w @voiceassistant/backend",
     "test:knowledge": "npm run build -w @voiceassistant/shared && tsx scripts/test-local-knowledge.ts",
+    "test:launcher": "node --test scripts/dev-process-policy.test.mjs && node scripts/dev-supervisor.mjs --smoke",
     "package:desktop": "npm run build && npm run build:packaged-backend && npm run package -w @voiceassistant/desktop",
     "dist:desktop": "npm run build && npm run build:packaged-backend && npm run dist -w @voiceassistant/desktop"
   },

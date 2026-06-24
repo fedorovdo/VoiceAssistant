@@ -72,6 +72,23 @@ test("complete technical action questions flush immediately", () => {
   }
 });
 
+test("complete networking questions flush while incomplete networking starts wait", () => {
+  for (const phrase of [
+    "Протокол TCP/IP на каком уровне?",
+    "На каком уровне работает TCP?",
+    "Сколько уровней OSI?",
+    "Расскажи о модели OSI."
+  ]) {
+    const update = new UtteranceBuffer().addFragment(phrase, 1_000);
+    assert.equal(update.shouldFlush, true, phrase);
+    assert.equal(update.flushReason, "strong_punctuation", phrase);
+  }
+
+  for (const phrase of ["Протокол TCP/IP...", "На каком уровне..."]) {
+    assert.equal(new UtteranceBuffer().addFragment(phrase, 1_000).shouldFlush, false, phrase);
+  }
+});
+
 test("incomplete fragments wait and complete unpunctuated text uses shorter idle timeout", () => {
   for (const phrase of ["Как проверить...", "Как добавить...", "В Linux...", "Например...", "Команда для..."]) {
     assert.equal(new UtteranceBuffer().addFragment(phrase, 1_000).shouldFlush, false, phrase);

@@ -1,10 +1,13 @@
 import type { KnowledgeCard } from "./knowledgeCards.js";
+import type { TechnicalTopic } from "./conversationContext.js";
 
 export interface LocalKnowledgeRegressionCase {
   query: string;
   expectedCardId?: string;
   expectedCategory?: KnowledgeCard["category"];
   expectedCommandFragment?: string;
+  currentTopic?: TechnicalTopic;
+  aggregatedText?: string;
 }
 
 export const localKnowledgeRegressionCases: LocalKnowledgeRegressionCase[] = [
@@ -18,6 +21,11 @@ export const localKnowledgeRegressionCases: LocalKnowledgeRegressionCase[] = [
   { query: "Как повысить права директории?", expectedCardId: "linux-file-directory-permissions", expectedCommandFragment: "chmod 750" },
   { query: "Как поменять пароль в Linux?", expectedCardId: "linux-change-password", expectedCommandFragment: "sudo passwd USER" },
   { query: "Как проверить безопасность Linux?", expectedCardId: "linux-security-quick-check", expectedCommandFragment: "ss -lntup" },
+  { query: "Как отключить SELinux?", expectedCardId: "linux-selinux-troubleshooting", expectedCommandFragment: "setenforce 0" },
+  { query: "Как проверить SELinux?", expectedCardId: "linux-selinux-troubleshooting", expectedCommandFragment: "getenforce" },
+  { query: "Как отключить фаервол в Linux?", expectedCardId: "linux-firewall-control", expectedCommandFragment: "systemctl stop firewalld" },
+  { query: "Как открыть порт в firewalld?", expectedCardId: "linux-firewall-control", expectedCommandFragment: "--add-port=8080/tcp" },
+  { query: "Отключить безопасность в Linux", expectedCardId: "linux-security-disable-guidance", expectedCommandFragment: "getenforce", currentTopic: "Linux" },
 
   { query: "Что такое Docker?", expectedCardId: "docker-overview", expectedCommandFragment: "docker info" },
   { query: "Из чего состоит Docker?", expectedCardId: "docker-overview", expectedCommandFragment: "docker info" },
@@ -46,7 +54,15 @@ export const localKnowledgeRegressionCases: LocalKnowledgeRegressionCase[] = [
 
   { query: "Что такое NAT?", expectedCardId: "network-nat" },
   { query: "Как проверить DNS?", expectedCardId: "network-dns-tools", expectedCommandFragment: "nslookup" },
-  { query: "Как проверить доступность порта?", expectedCardId: "network-tcp-port", expectedCommandFragment: "Test-NetConnection" }
+  { query: "Как проверить доступность порта?", expectedCardId: "network-tcp-port", expectedCommandFragment: "Test-NetConnection" },
+  { query: "Как открыть порт 8080?", expectedCardId: "network-open-port", expectedCommandFragment: "firewall-cmd --permanent" },
+  { query: "Как открыть порт 8080 в фаерволе?", expectedCardId: "network-open-port", expectedCommandFragment: "ufw allow 8080" },
+  { query: "На каком уровне работает TCP?", expectedCardId: "network-tcp-ip-model" },
+  { query: "Сколько уровней TCP/IP?", expectedCardId: "network-tcp-ip-model" },
+  { query: "Сколько уровней OSI?", expectedCardId: "network-osi-model" },
+  { query: "Сетевые схемы", expectedCardId: "network-topologies" },
+  { query: "Схема OCI", expectedCardId: "network-osi-model", currentTopic: "Networking", aggregatedText: "Обсудим модель OSI" },
+  { query: "На каком уровне работает DNS?", expectedCardId: "network-protocol-layers" }
 ];
 
 export const localKnowledgeNegativeRegressionCases = [
@@ -59,5 +75,15 @@ export const localKnowledgeNegativeRegressionCases = [
   "как повысить громкость",
   "как поменять пароль на сайте",
   "как изменить права человека",
-  "как дать права персонажу в игре"
+  "как дать права персонажу в игре",
+  "отключить безопасность браузера",
+  "отключить безопасность телефона",
+  "как отключить сигнализацию",
+  "отключить защиту аккаунта",
+  "выключить антивирус windows",
+  "открыть портвейн",
+  "уровни в игре",
+  "схема квартиры",
+  "что такое OCI в Oracle Cloud",
+  "сколько уровней в здании"
 ];

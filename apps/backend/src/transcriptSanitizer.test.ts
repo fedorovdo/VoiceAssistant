@@ -23,6 +23,14 @@ test("sanitizeTranscript preserves mixed Russian and English technical phrases",
   assert.equal(sanitizeTranscript("Linux port", "ru").shouldUse, true);
 });
 
+test("sanitizeTranscript protects networking terms followed by punctuation", () => {
+  for (const phrase of ["Расскажи о модели OSI.", "Схема OSI.", "Протокол TCP/IP на каком уровне?"]) {
+    const result = sanitizeTranscript(phrase, "ru");
+    assert.equal(result.shouldUse, true, phrase);
+    assert.equal(result.technicalProtectionApplied, true, phrase);
+  }
+});
+
 test("sanitizeTranscript marks an unfinished question for buffering", () => {
   const result = sanitizeTranscript("Как работает", "ru");
   assert.equal(result.shouldUse, false);
@@ -59,4 +67,12 @@ test("sanitizeTranscript keeps genuinely incomplete password fragments waiting",
   const result = sanitizeTranscript("Пароль...", "ru");
   assert.equal(result.shouldUse, false);
   assert.equal(result.reason, "incomplete");
+});
+
+test("sanitizeTranscript keeps malformed short networking starts out of the answer pipeline", () => {
+  for (const phrase of ["Сколько у?", "На каком...", "Протокол..."]) {
+    const result = sanitizeTranscript(phrase, "ru");
+    assert.equal(result.shouldUse, false, phrase);
+    assert.equal(result.reason, "incomplete", phrase);
+  }
 });

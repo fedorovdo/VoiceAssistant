@@ -61,23 +61,29 @@ export function reduceLiveProcessingState(
 }
 
 export class LiveAnswerRequestGate {
-  private inFlight = false;
+  private activeToken?: number;
+  private tokenSequence = 0;
 
-  tryStart(): boolean {
-    if (this.inFlight) return false;
-    this.inFlight = true;
-    return true;
+  tryAcquire(): number | undefined {
+    if (this.activeToken !== undefined) return undefined;
+    this.activeToken = ++this.tokenSequence;
+    return this.activeToken;
   }
 
-  finish(): void {
-    this.inFlight = false;
+  tryStart(): boolean {
+    return this.tryAcquire() !== undefined;
+  }
+
+  finish(token?: number): void {
+    if (token !== undefined && token !== this.activeToken) return;
+    this.activeToken = undefined;
   }
 
   reset(): void {
-    this.inFlight = false;
+    this.activeToken = undefined;
   }
 
   isInFlight(): boolean {
-    return this.inFlight;
+    return this.activeToken !== undefined;
   }
 }

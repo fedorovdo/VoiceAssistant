@@ -9,12 +9,18 @@ export interface NormalizedTechnicalText {
   replacements: TechnicalTermReplacement[];
 }
 
+export interface TechnicalTermNormalizationContext {
+  currentTopic?: string | null;
+  contextText?: string;
+}
+
 interface NormalizationRule {
   pattern: RegExp;
   replacement: string | ((match: string, ...groups: string[]) => string);
   target: string;
   reason: string;
   context?: RegExp;
+  excludeContext?: RegExp;
 }
 
 const technicalContext = /(?:kubernetes|кубер(?:нетес|нетис)?|кластер|cluster|pod|поды|service|сервис|docker|докер|linux|линукс|команд|command|контейнер|container|deployment|деплой)/iu;
@@ -22,6 +28,8 @@ const kubernetesContext = /(?:kubernetes|кубер(?:нетес|нетис)?|к
 const dockerContext = /(?:docker|докер|контейнер|container|image|образ|compose|композ|registry|регистри|реджистри)/iu;
 const ambiguousKubernetesContext = /(?:кластер|cluster|pod|поды|pods|service|сервис|deployment|деплой|ingress|ингресс|namespace|неймспейс)/iu;
 const dockerComposeContext = /(?:docker|докер|контейнер|container|compose\s+(?:up|down|logs)|команда|command)/iu;
+const osiContext = /(?:схем|модел|уров|сет|протокол|networking|network|layer|protocol)/iu;
+const oracleCloudContext = /(?:oracle\s+cloud|oracle\s+cloud\s+infrastructure)/iu;
 
 const rules: NormalizationRule[] = [
   rule("(?:сервис\\s+кубернетес|кубернетес\\s+сервис)", "Kubernetes service", "Kubernetes service"),
@@ -59,6 +67,12 @@ const rules: NormalizationRule[] = [
   rule("(?:чмод|си\\s+эйч\\s+мод)", "chmod", "chmod", technicalContext),
   rule("(?:чаун|си\\s+эйч\\s+оун)", "chown", "chown", technicalContext),
 
+  contextualRule("систем(?:а|е|у|ой)\\s+oci", "модель OSI", "OSI", osiContext, oracleCloudContext),
+  contextualRule("oci", "OSI", "OSI", osiContext, oracleCloudContext),
+  contextualRule("(?:оси|ози)", "OSI", "OSI", osiContext),
+  contextualRule("(?:tsp/ip|тсп/ip|тсип|тсп\\s+айпи|тцп\\s+айпи)", "TCP/IP", "TCP/IP", /(?:протокол|стек|модел|уров|сет|networking|protocol|layer)/iu),
+  contextualRule("уровень\\s+тцп", "уровень TCP", "TCP", /(?:сет|networking|protocol|layer|уров)/iu),
+
   rule("(?:ди\\s+эн\\s+эс|днс)", "DNS", "DNS"),
   rule("(?:ди\\s+эйч\\s+си\\s+пи|дхцп)", "DHCP", "DHCP"),
   rule("нат", "NAT", "NAT", /(?:сеть|сетев|network|маршрут|роутер|router|адрес|ip|порт)/iu),
@@ -75,12 +89,18 @@ const rules: NormalizationRule[] = [
   rule("(?:бранч|branches)", "branch", "branch")
 ];
 
-export function normalizeTechnicalTerms(text: string): NormalizedTechnicalText {
+export function normalizeTechnicalTerms(
+  text: string,
+  context: TechnicalTermNormalizationContext = {}
+): NormalizedTechnicalText {
   let normalizedText = text;
   const replacements: TechnicalTermReplacement[] = [];
 
   for (const normalizationRule of rules) {
-    const contextText = normalizedText;
+    const contextText = [normalizedText, context.contextText, context.currentTopic].filter(Boolean).join(" ");
+    if (normalizationRule.excludeContext?.test(contextText)) {
+      continue;
+    }
     if (normalizationRule.context && !normalizationRule.context.test(contextText)) {
       continue;
     }
@@ -105,6 +125,8 @@ export function normalizeTechnicalTerms(text: string): NormalizedTechnicalText {
     });
   }
 
+  normalizedText = normalizedText.replace(/\bOSI\s+модель(?=$|[^\p{L}\p{N}])/giu, "модель OSI");
+
   return { text: normalizedText, replacements };
 }
 
@@ -120,6 +142,19 @@ function rule(
     target,
     reason: "Russian STT technical term normalization",
     context
+  };
+}
+
+function contextualRule(
+  source: string,
+  replacement: string,
+  target: string,
+  context: RegExp,
+  excludeContext?: RegExp
+): NormalizationRule {
+  return {
+    ...rule(source, replacement, target, context),
+    excludeContext
   };
 }
 

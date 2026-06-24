@@ -57,6 +57,20 @@ const strongTechnicalTerms = [
   "nslookup",
   "linux",
   "git",
+  "tcp",
+  "tcp/ip",
+  "tsp/ip",
+  "udp",
+  "ip",
+  "osi",
+  "oci",
+  "arp",
+  "vlan",
+  "icmp",
+  "firewall",
+  "protocol",
+  "протокол",
+  "сетевой уровень",
   "passwd",
   "password",
   "пароль",
@@ -95,6 +109,8 @@ const incompleteQuestionStarts = [
 const technicalActionPatterns = [
   /^(?:как\s+)?(?:поменять|изменить|сменить|проверить|добавить|настроить|перезапустить)(?:\s|$)/i,
   /^(?:что\s+такое|из\s+чего\s+состоит)(?:\s|$)/i,
+  /(?:на\s+каком\s+уровне|сколько\s+уровней|расскажи(?:те)?|где\s+работает|какая\s+(?:модель|схема))/i,
+  /^(?:протокол|схема|модель|сетевая\s+модель)(?:\s|$)/i,
   /^(?:how\s+to\s+)?(?:change|reset)\s+(?:a\s+)?password(?:\s|$)/i
 ];
 
@@ -122,6 +138,7 @@ export function sanitizeTranscript(text: string, language: TranscriptLanguage): 
   const wordCount = normalizedText.split(" ").filter(Boolean).length;
   const technicalProtectionApplied = hasTechnicalTerm
     && hasTechnicalActionPattern(normalizedText)
+    && !/(?:\.\.\.|…)$/.test(cleanedText)
     && (/[?.!]$/.test(cleanedText) || wordCount >= 5);
   if (isLikelyIncomplete(normalizedText, cleanedText, hasTechnicalTerm) && !technicalProtectionApplied) {
     return {
@@ -176,12 +193,14 @@ function hasTechnicalActionPattern(text: string): boolean {
 }
 
 function containsPhrase(text: string, phrase: string): boolean {
-  return ` ${text} `.includes(` ${phrase} `);
+  const punctuationSeparatedText = text.replace(/[.,!?;:]+/g, " ").replace(/\s+/g, " ").trim();
+  return ` ${punctuationSeparatedText} `.includes(` ${phrase} `);
 }
 
 function isLikelyIncomplete(text: string, originalText: string, hasTechnicalTerm: boolean): boolean {
   const words = text.split(" ").filter(Boolean);
   if (/^(?:как|how|what)$/.test(text)) return true;
+  if (/^(?:сколько\s+у|на\s+каком(?:\s+уровне(?:\s+работает)?)?|протокол)$/.test(text) && !hasTechnicalTerm) return true;
   if (/(?:\.\.\.|…)\s*$/.test(originalText) && words.length <= 4) return true;
   const lastWord = words.at(-1) ?? "";
   if (danglingEndings.includes(lastWord)) return true;

@@ -82,3 +82,39 @@ test("normalized terms improve topic detection and Live Assist intent", () => {
   assert.equal(schedulerQuestion.currentTopic, "Kubernetes");
   assert.equal(schedulerQuestion.shouldAnswer, true);
 });
+
+test("normalizeTechnicalTerms repairs OSI speech variants only in networking context", () => {
+  assert.equal(normalizeTechnicalTerms("Схема OCI").text, "Схема OSI");
+  assert.equal(normalizeTechnicalTerms("Модель ОСИ").text, "Модель OSI");
+  assert.equal(normalizeTechnicalTerms("Уровни ОЗИ").text, "Уровни OSI");
+  assert.equal(
+    normalizeTechnicalTerms("Что такое OCI в Oracle Cloud?").text,
+    "Что такое OCI в Oracle Cloud?"
+  );
+});
+
+test("normalizeTechnicalTerms repairs networking STT typos with context", () => {
+  assert.equal(normalizeTechnicalTerms("Протокол TSP/IP").text, "Протокол TCP/IP");
+  assert.equal(normalizeTechnicalTerms("Протокол ТСП/IP").text, "Протокол TCP/IP");
+  assert.equal(
+    normalizeTechnicalTerms("ТСИП", { currentTopic: "Networking", contextText: "модель сети" }).text,
+    "TCP/IP"
+  );
+  assert.equal(
+    normalizeTechnicalTerms("Расскажи о системе OCI", { currentTopic: "Networking" }).text,
+    "Расскажи о модель OSI"
+  );
+  assert.equal(
+    normalizeTechnicalTerms("Что такое OCI в Oracle Cloud?", { currentTopic: "Networking" }).text,
+    "Что такое OCI в Oracle Cloud?"
+  );
+});
+
+test("normalizeTechnicalTerms repairs safe spoken networking forms with context", () => {
+  const context = { currentTopic: "Networking", contextText: "Обсуждаем сетевую модель и уровни протоколов" };
+  assert.equal(normalizeTechnicalTerms("тсп айпи", context).text, "TCP/IP");
+  assert.equal(normalizeTechnicalTerms("тцп айпи", context).text, "TCP/IP");
+  assert.equal(normalizeTechnicalTerms("оси модель", context).text, "модель OSI");
+  assert.equal(normalizeTechnicalTerms("модель оси", context).text, "модель OSI");
+  assert.equal(normalizeTechnicalTerms("уровень тцп", context).text, "уровень TCP");
+});

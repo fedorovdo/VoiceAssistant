@@ -89,7 +89,7 @@ const topicTerms: Record<TechnicalTopic, string[]> = {
   Proxmox: ["proxmox", "pve", "pvesm", "vzdump", "qm command", "qm list"],
   Docker: ["docker", "dockerfile", "docker image", "container", "registry", "контейнер", "образ docker"],
   Linux: ["linux", "systemctl", "journalctl", "chmod", "chown", "passwd", "chage", "fstab", "bash", "df -h", "free -h", "ip addr", "ip route", "sudo", "sudoers", "wheel", "visudo", "usermod", "ufw", "firewall", "firewalld", "iptables", "sshd", "authorized_keys", "selinux"],
-  Networking: ["networking", "network", "nat", "port", "ping", "traceroute", "tracert", "netcat", "маршрут", "сеть", "порт"],
+  Networking: ["networking", "network", "nat", "port", "ping", "traceroute", "tracert", "netcat", "osi", "tcp", "tcp/ip", "tcp ip", "udp", "icmp", "arp", "vlan", "протокол tcp", "сетевая модель", "топология", "сетевая схема", "сетевые схемы", "маршрут", "сеть", "порт"],
   Git: ["git", "commit", "branch", "merge", "rebase", "pull request", "репозиторий", "коммит", "ветка git"]
 };
 
@@ -116,6 +116,8 @@ const explanatoryIntentPatterns = [
   /объясни(?:те)?/i,
   /поясни(?:те)?/i,
   /расскажи(?:те)?/i,
+  /на каком уровне/i,
+  /сколько уровней/i,
   /\bwhat is\b/i,
   /\bwhat does\b/i,
   /\bhow does\b/i,
@@ -128,6 +130,9 @@ const commandIntentPatterns = [
   /(?:сбросить|сменить)\s+парол/i,
   /(?:менять|меняем|заменить|замена)\s+парол/i,
   /команд[аы]?\s+для\s+замены\s+парол/i,
+  /отключить\s+безопасност/i,
+  /сетев(?:ая|ые)\s+схем/i,
+  /схема\s+osi/i,
   /^\s*(?:passwd|chage)\b/i,
   /(?:какая|какой|какую) команд[ауой]/i,
   /команда для/i,
@@ -149,7 +154,9 @@ const topicIntroPatterns = [
   /^сегодня\s+(?:говорим\s+)?(?:о|об|про)\s+/i,
   /^(?:let'?s\s+)?talk\s+about\s+/i,
   /^let'?s\s+discuss\s+/i,
-  /^today(?:'s\s+topic\s+is|\s+we\s+discuss)\s+/i
+  /^today(?:'s\s+topic\s+is|\s+we\s+discuss)\s+/i,
+  /^протокол\s+tcp(?:\/|\s+)ip[.! ]*$/i,
+  /^сетевая\s+модель[.! ]*$/i
 ];
 
 const ignoredConversationPatterns = [

@@ -34,7 +34,7 @@ test("Live processing events expose the expected compact state sequence", () => 
 });
 
 test("terminal Live processing states settle back to listening", () => {
-  for (const terminalEvent of ["answer_rendered", "duplicate_detected", "processing_failed"] as const) {
+  for (const terminalEvent of ["answer_rendered", "duplicate_detected", "local_match_missing", "processing_failed"] as const) {
     const terminalState = reduceLiveProcessingState("deciding", terminalEvent);
     assert.notEqual(terminalState, "listening");
     assert.equal(reduceLiveProcessingState(terminalState, "settled"), "listening");
@@ -55,6 +55,20 @@ test("answer request gate resets after success, error, and Clear", () => {
 
   assert.equal(gate.tryStart(), true);
   gate.reset();
+  assert.equal(gate.isInFlight(), false);
+});
+
+test("a stale answer completion cannot release a newer request gate", () => {
+  const gate = new LiveAnswerRequestGate();
+  const staleToken = gate.tryAcquire();
+  assert.notEqual(staleToken, undefined);
+  gate.reset();
+  const currentToken = gate.tryAcquire();
+  assert.notEqual(currentToken, undefined);
+
+  gate.finish(staleToken);
+  assert.equal(gate.isInFlight(), true);
+  gate.finish(currentToken);
   assert.equal(gate.isInFlight(), false);
 });
 

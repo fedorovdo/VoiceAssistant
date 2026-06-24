@@ -176,3 +176,122 @@ test("Manual and Live lookup agree on Linux privilege, permission, and password 
     assert.equal(policy.action, "answer", query);
   }
 });
+
+test("Manual and Live lookup agree on explicit SELinux and firewall requests", () => {
+  const cases = [
+    ["Как отключить SELinux?", "linux-selinux-troubleshooting"],
+    ["Как проверить SELinux?", "linux-selinux-troubleshooting"],
+    ["Как отключить фаервол в Linux?", "linux-firewall-control"],
+    ["Как открыть порт в firewalld?", "linux-firewall-control"]
+  ] as const;
+
+  for (const [query, expectedCardId] of cases) {
+    const contextDecision = new ConversationContextBuffer().add(query, 1_000, "balanced");
+    const manualResult = lookupLocalKnowledge(query);
+    const liveResult = lookupLocalKnowledge(query, {
+      aggregatedText: contextDecision.aggregatedText,
+      currentTopic: contextDecision.currentTopic
+    });
+    assert.equal(manualResult.bestMatch?.id, expectedCardId, query);
+    assert.equal(liveResult.bestMatch?.id, expectedCardId, query);
+    assert.equal(liveResult.bestMatch?.id, manualResult.bestMatch?.id, query);
+  }
+});
+
+test("ambiguous security disabling requires Linux context and stays non-destructive", () => {
+  assert.equal(lookupLocalKnowledge("Отключить безопасность").bestMatch, undefined);
+
+  const context = new ConversationContextBuffer();
+  context.add("Давайте поговорим о Linux", 1_000, "balanced");
+  const decision = context.add("Отключить безопасность", 2_000, "balanced");
+  const contextual = lookupLocalKnowledge("Отключить безопасность", {
+    aggregatedText: decision.aggregatedText,
+    currentTopic: decision.currentTopic
+  });
+
+  assert.equal(decision.intent, "answer_request");
+  assert.equal(contextual.bestMatch?.id, "linux-security-disable-guidance");
+  assert.equal(contextual.bestMatch?.commands.includes("sudo systemctl disable --now firewalld"), false);
+});
+
+test("security disabling negatives remain unmatched", () => {
+  for (const query of [
+    "отключить безопасность браузера",
+    "отключить безопасность телефона",
+    "как отключить сигнализацию",
+    "отключить защиту аккаунта",
+    "выключить антивирус windows"
+  ]) {
+    assert.equal(lookupLocalKnowledge(query).bestMatch, undefined, query);
+  }
+});
+
+test("port opening stays distinct from TCP port checking", () => {
+  assert.equal(lookupLocalKnowledge("Как открыть порт 8080?").bestMatch?.id, "network-open-port");
+  assert.equal(lookupLocalKnowledge("Как открыть порт 8080 в фаерволе?").bestMatch?.id, "network-open-port");
+  assert.equal(lookupLocalKnowledge("Как проверить порт 8080?").bestMatch?.id, "network-tcp-port");
+});
+
+test("Manual and Live lookup agree on complete Networking Core questions", () => {
+  const cases = [
+    ["Как открыть порт 8080?", "network-open-port"],
+    ["На каком уровне работает TCP?", "network-tcp-ip-model"],
+    ["Сколько уровней OSI?", "network-osi-model"],
+    ["Сетевые схемы", "network-topologies"],
+    ["На каком уровне работает DNS?", "network-protocol-layers"]
+  ] as const;
+
+  for (const [rawQuery, expectedCardId] of cases) {
+    const query = normalizeTechnicalTerms(rawQuery).text;
+    const decision = new ConversationContextBuffer().add(query, 1_000, "balanced");
+    const manual = lookupLocalKnowledge(query);
+    const live = lookupLocalKnowledge(query, {
+      aggregatedText: decision.aggregatedText,
+      currentTopic: decision.currentTopic
+    });
+    assert.equal(manual.bestMatch?.id, expectedCardId, rawQuery);
+    assert.equal(live.bestMatch?.id, expectedCardId, rawQuery);
+  }
+});
+
+test("Networking context qualifies short OSI and TCP/IP follow-ups", () => {
+  const osiContext = new ConversationContextBuffer();
+  osiContext.add("Модель OSI", 1_000, "balanced");
+  const osiCount = osiContext.add("Сколько уровней?", 2_000, "balanced");
+  const osiResult = lookupLocalKnowledge("Сколько уровней?", {
+    aggregatedText: osiCount.aggregatedText,
+    currentTopic: osiCount.currentTopic
+  });
+  assert.equal(osiResult.bestMatch?.id, "network-osi-model");
+
+  const tcpContext = new ConversationContextBuffer();
+  tcpContext.add("Модель TCP/IP", 1_000, "balanced");
+  const tcpCount = tcpContext.add("Сколько уровней?", 2_000, "balanced");
+  const tcpResult = lookupLocalKnowledge("Сколько уровней?", {
+    aggregatedText: tcpCount.aggregatedText,
+    currentTopic: tcpCount.currentTopic
+  });
+  assert.equal(tcpResult.bestMatch?.id, "network-tcp-ip-model");
+
+  const ipFollowUp = tcpContext.add("А IP?", 3_000, "balanced");
+  const ipResult = lookupLocalKnowledge("А IP?", {
+    aggregatedText: ipFollowUp.aggregatedText,
+    currentTopic: ipFollowUp.currentTopic
+  });
+  assert.equal(ipResult.bestMatch?.id, "network-protocol-layers");
+
+  assert.equal(lookupLocalKnowledge("Сколько уровней?").bestMatch, undefined);
+});
+
+test("Networking Core negative phrases remain unmatched", () => {
+  for (const rawQuery of [
+    "открыть портвейн",
+    "уровни в игре",
+    "схема квартиры",
+    "что такое OCI в Oracle Cloud",
+    "сколько уровней в здании"
+  ]) {
+    const query = normalizeTechnicalTerms(rawQuery).text;
+    assert.equal(lookupLocalKnowledge(query).bestMatch, undefined, rawQuery);
+  }
+});

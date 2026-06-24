@@ -8,10 +8,10 @@ import {
 import type { KnowledgeTopicPack } from "@voiceassistant/shared";
 
 const expectedTopicCounts = {
-  linux: 48,
+  linux: 51,
   docker: 41,
   kubernetes: 31,
-  networking: 20,
+  networking: 25,
   "active-directory": 27,
   git: 12,
   proxmox: 10
@@ -27,9 +27,9 @@ const representativeCards = {
   proxmox: "proxmox-version"
 } as const;
 
-test("knowledge registry contains seven complete topic packs and 189 cards", () => {
+test("knowledge registry contains seven complete topic packs and 197 cards", () => {
   assert.equal(knowledgeTopicPacks.length, 7);
-  assert.equal(knowledgeCards.length, 189);
+  assert.equal(knowledgeCards.length, 197);
   assert.deepEqual(
     Object.fromEntries(knowledgeTopicPacks.map((pack) => [pack.id, pack.cards.length])),
     expectedTopicCounts

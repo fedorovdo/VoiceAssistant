@@ -240,6 +240,12 @@ button {
   font-weight: 600;
 }
 
+.live-queue-badge {
+  font-variant-numeric: tabular-nums;
+  color: #5f6670;
+  background: rgba(255, 255, 255, 0.68);
+}
+
 .live-processing-state > span {
   width: 6px;
   height: 6px;
@@ -577,6 +583,17 @@ textarea:focus {
   flex: 1;
   padding: 20px 22px 24px;
   overflow: auto;
+}
+
+.focused-local-answer {
+  margin-bottom: 16px;
+  padding: 11px 13px;
+  border: 1px solid rgb(49 130 92 / 18%);
+  border-radius: 8px;
+  background: rgb(49 130 92 / 7%);
+  color: #244f3a;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .knowledge-card + .knowledge-card {

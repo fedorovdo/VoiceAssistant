@@ -98,7 +98,7 @@ export function shouldUseLocalOnlyFastPath(
     && contextDecision.reason !== "duplicate";
 }
 
-export type LocalKnowledgeQuerySource = "newest_fragment" | "topic_context" | "aggregated_context";
+export type LocalKnowledgeQuerySource = "newest_fragment" | "networking_context" | "topic_context" | "aggregated_context";
 
 export interface LocalKnowledgeLookupResult extends KnowledgeCardLookupResult {
   querySource: LocalKnowledgeQuerySource;
@@ -115,6 +115,15 @@ export function lookupLocalKnowledge(
   }
 
   const attempts: KnowledgeCardLookupResult[] = [direct];
+  const networkingContextQuery = buildNetworkingContextQuery(fragment, context);
+  if (networkingContextQuery) {
+    const networkingContextual = lookupKnowledgeCards(networkingContextQuery);
+    attempts.push(networkingContextual);
+    if (networkingContextual.bestMatch) {
+      return withLookupContext(networkingContextual, "networking_context", true);
+    }
+  }
+
   if (context.currentTopic) {
     const contextual = lookupKnowledgeCards(`${fragment} ${topicSearchContext(context.currentTopic)}`);
     attempts.push(contextual);
@@ -175,4 +184,43 @@ function topicSearchContext(topic: NonNullable<LiveContextDecision["currentTopic
   if (topic === "Active Directory") return "Active Directory";
   if (topic === "DNS/DHCP") return "DNS DHCP";
   return topic;
+}
+
+function buildNetworkingContextQuery(
+  fragment: string,
+  context: LocalKnowledgeLookupContext
+): string | undefined {
+  if (context.currentTopic !== "Networking" || !context.aggregatedText) return undefined;
+
+  const aggregate = normalizeLookupText(context.aggregatedText);
+  const query = normalizeLookupText(fragment);
+  const subject = /(?:^|\s)osi(?:\s|$)/i.test(aggregate)
+    ? "OSI"
+    : /(?:^|\s)tcp(?:\/|\s+)ip(?:\s|$)/i.test(aggregate)
+      ? "TCP/IP"
+      : undefined;
+  const protocol = query.match(/(?:^|\s)(tcp|ip|dns|dhcp|arp|vlan|icmp)(?:-?протокол)?(?:\s|$)/i)?.[1];
+  if (protocol && (/(?:где|уров|что\s+такое)/i.test(query) || query.split(/\s+/).length <= 4)) {
+    return `Где работает ${protocol}`;
+  }
+
+  if (!subject) return undefined;
+
+  if (/на\s+каком\s+уровне/i.test(query)) {
+    return subject === "TCP/IP" ? "На каком уровне работает TCP/IP" : "Модель OSI";
+  }
+
+  if (/расскажи(?:те)?\s+(?:о|об|про)\s+модел[ьи]/i.test(query)) {
+    return `Модель ${subject}`;
+  }
+
+  if (/сколько\s+уровн/i.test(query)) {
+    return `Сколько уровней ${subject}`;
+  }
+
+  if (/на\s+каком\s+уровне\s+работает/i.test(query) && !/(?:tcp|ip|dns|dhcp|arp|vlan)/i.test(query)) {
+    return subject === "OSI" ? "Модель OSI" : "На каком уровне работает TCP/IP";
+  }
+
+  return undefined;
 }

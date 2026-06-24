@@ -1,7 +1,8 @@
 import {
   localKnowledgeNegativeRegressionCases,
   localKnowledgeRegressionCases,
-  lookupLocalKnowledge
+  lookupLocalKnowledge,
+  normalizeTechnicalTerms
 } from "@voiceassistant/shared";
 
 interface Failure {
@@ -14,7 +15,11 @@ const failures: Failure[] = [];
 let passed = 0;
 
 for (const regressionCase of localKnowledgeRegressionCases) {
-  const result = lookupLocalKnowledge(regressionCase.query);
+  const normalizedQuery = normalizeTechnicalTerms(regressionCase.query).text;
+  const result = lookupLocalKnowledge(normalizedQuery, {
+    currentTopic: regressionCase.currentTopic,
+    aggregatedText: regressionCase.aggregatedText
+  });
   const bestMatch = result.bestMatch;
   const expected = regressionCase.expectedCardId
     ? `card ${regressionCase.expectedCardId}`
@@ -42,7 +47,7 @@ for (const regressionCase of localKnowledgeRegressionCases) {
 }
 
 for (const query of localKnowledgeNegativeRegressionCases) {
-  const result = lookupLocalKnowledge(query);
+  const result = lookupLocalKnowledge(normalizeTechnicalTerms(query).text);
   if (!result.bestMatch) {
     passed += 1;
     continue;

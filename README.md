@@ -46,6 +46,8 @@ To start both development processes in one terminal with separate `backend` and 
 npm run dev:all
 ```
 
+The development supervisor owns the backend, Vite, and Electron process trees. Closing the Electron window normally stops Vite and the backend and returns a successful exit code; cleanup termination codes are not reported as false lifecycle failures. A real non-zero Electron or dev-server exit remains a failure with its original code. Starting a second Electron instance prints `VoiceAssistant is already running.` and shuts down the newly started development services cleanly. `Ctrl+C` follows the same cleanup path.
+
 ## Development Troubleshooting
 
 If a previous Node.js, Vite, Fastify, or Electron development session did not shut down cleanly, check the two VoiceAssistant ports:
@@ -72,6 +74,8 @@ Run the canonical local knowledge smoke suite independently with:
 ```powershell
 npm run test:knowledge
 ```
+
+Launcher exit classification can be checked independently with `npm run test:launcher`.
 
 The regression cases exercise the production local lookup and protect core offline Linux, Docker, Kubernetes, Git, Active Directory, and networking questions from silent matching regressions.
 
@@ -121,7 +125,7 @@ The desktop workspace supports **Vertical** and **Horizontal** panel layouts. Ch
 
 ## Live Assist Mode
 
-Live Assist remains conservative: it classifies each completed Mock STT or microphone transcript as an explicit technical question, a technical term, or ignored conversation. A focused intent-rescue check prevents practical admin questions from being falsely ignored when a question/help phrase is paired with a clear technical term such as Linux, sudo, firewall, systemctl, Docker, or Kubernetes. Ordinary conversation, lyrics-like fragments, and questions without technical context remain ignored. Only suitable fragments are answered automatically, with debounce, throttling, duplicate prevention, and no parallel answer requests.
+Live Assist remains conservative: it classifies each completed Mock STT or microphone transcript as an explicit technical question, a technical term, or ignored conversation. A focused intent-rescue check prevents practical admin questions from being falsely ignored when a question/help phrase is paired with a clear technical term such as Linux, sudo, firewall, systemctl, Docker, or Kubernetes. Ordinary conversation, lyrics-like fragments, and questions without technical context remain ignored. Suitable complete requests enter a bounded FIFO queue with one active answer transaction and up to five pending requests. Exact normalized duplicates are filtered before enqueueing; distinct questions are never discarded merely because they use the same topic or local card.
 
 Topic introductions such as `Давайте поговорим о Kubernetes` set the in-memory conversation topic without requesting an immediate answer. Live Assist then waits for a question or command request and can qualify short follow-ups such as `Какие основные команды?` or `Как посмотреть логи?` with that topic. Explicit requests trigger answers normally, while non-technical conversation remains ignored.
 
@@ -139,17 +143,17 @@ Live Assist also keeps a lightweight in-memory context of up to ten recent accep
 
 Before making an automatic decision, Live Assist briefly buffers nearby accepted speech fragments into one utterance. Short pieces such as `Как дать права?`, `В Linux.`, and `sudo.` are combined before classification and local knowledge lookup. A clearly complete technical question can flush immediately; otherwise the buffer waits for punctuation, up to three fragments, or a short idle pause. This reduces premature answers caused by experimental STT chunk boundaries.
 
-The Live Assist badge includes a compact processing state: listening, transcribing, collecting a phrase, deciding, searching local knowledge, requesting GPT, answered, no local match, or processing error. The indicator is intentionally small and does not replace the recognized text, answer, or collapsed diagnostics.
+The Live Assist badge includes a compact processing state: listening, transcribing, collecting a phrase, deciding, searching local knowledge, requesting GPT, answered, no local match, or processing error. A nearby **Queued: N** badge shows complete requests waiting behind the active transaction. The indicators are intentionally small and do not replace the recognized text, answer, or collapsed diagnostics.
 
 Complete punctuated technical questions flush immediately. Semantically complete text without punctuation uses a roughly 900 ms idle flush, while incomplete starts such as `Как проверить...`, `В Linux...`, `Например...`, and `Команда для...` continue waiting for another fragment. In **Local knowledge only** mode, a strong local match is rendered synchronously after flush and does not wait for GPT debounce or topic cooldown; exact duplicates remain blocked.
 
-Development builds include collapsed Live Assist and STT diagnostics. Use **Show diagnostics** below the recognized text to inspect the newest fragment, pending request context, aggregate, topic, classification, answer-source mode, final decision, reason, and remaining cooldown. Timing fields cover audio chunk creation, transcription start/completion, utterance flush, local lookup, GPT request, answer rendering, and total time from the latest audio chunk to the answer. The compact audio status stays visible while detailed diagnostics are hidden. Diagnostics contain no API keys, raw audio, or persisted conversation data and are intended for tuning automatic-answer behavior.
+Development builds include collapsed Live Assist and STT diagnostics. Use **Show diagnostics** below the recognized text to inspect the newest fragment, its transcript event and request IDs, queue decision, pending count, sanitizer and utterance decisions, lookup result, answer revision, pending context, topic, classification, answer-source mode, final decision, reason, and remaining cooldown. Timing fields cover audio chunk creation, transcription start/completion, utterance flush, local lookup, GPT request, answer rendering, and total time from the latest audio chunk to the answer. The compact audio status stays visible while detailed diagnostics are hidden. Diagnostics contain no API keys, raw audio, or persisted conversation data and are intended for tuning automatic-answer behavior.
 
 The STT cleanup stage protects complete action-oriented technical questions, including common Linux password and port requests, before applying short-fragment noise rules. Exact repeated transcripts are reported separately from noise and suppressed for a short window; after that window, or after **Clear**, the same question can be processed again. Development diagnostics show the sanitizer decision, reason, technical-question protection, and duplicate result.
 
 While recording continues, Live Assist briefly shows terminal states such as **Answer ready**, duplicate, no match, or error and then returns to **Listening**. Duplicate protection compares exact normalized utterances: a differently worded request may reuse the same topic or local card immediately. Local-only answers bypass topic and GPT throttling when the newest complete request has a strong local match, so switching Linux → Docker → Linux does not leave stale topic state behind.
 
-Conversation context and the pending utterance buffer exist only in renderer memory. They are cleared by the **Clear** action and are never written to disk or added to the microphone upload.
+Conversation context, the pending utterance buffer, and the Live request queue exist only in renderer memory. **Stop** cancels the active and queued answer work while preserving recent topic context for a quick resume until its TTL expires. **Clear** additionally removes the recognized dialogue, current answer, queue, duplicate cache, contexts, timers, processing state, and development traces. None of this state is written to disk or added to the microphone upload.
 
 For Russian speech, accepted STT fragments also pass through a conservative technical-term normalizer. Common spoken or distorted forms such as `Кубернетес`, `кубси тейл`, `докер образ`, and `журнал контрол` are converted to canonical terms before topic detection, local knowledge matching, and GPT prompting. Only the normalized text and an in-memory replacement summary are retained; this context is not saved to disk.
 
@@ -174,6 +178,10 @@ Dockerfile questions such as `Что такое Dockerfile?` and common Russian 
 Local matching also recognizes common Russian question forms such as `Что такое ...?`, `Из чего состоит ...?`, `Расскажи про ...` and `Для чего нужен ...?`, including practical singular/plural variants such as `порт` and `порты`.
 
 Manual Ask and Live Assist check these cards before waiting for GPT. A matching card is shown immediately with the source label **local knowledge**, and it works without an API key. In interview and learning modes, a configured GPT provider may enrich that result while the local card stays visible; the source changes clearly when the GPT response arrives. Without a local match, an API key is required for a GPT answer.
+
+Linux security coverage includes focused SELinux and firewall troubleshooting. These cards prefer audit logs, permissive mode, and narrowly opening required ports over permanently disabling protection. A broad request such as `Отключить безопасность` needs Linux context and returns clarification-oriented guidance rather than blanket disable commands.
+
+The Networking Core cards cover opening versus checking ports, the TCP/IP and OSI models, protocol-to-layer mapping, and common network topologies. Live Assist keeps a 90-second in-memory networking context with a broad topic, subtopic, and focused protocol/entity. Short follow-ups such as `Сколько уровней?`, `На каком уровне работает?`, or `А IP?` use only the latest accepted networking context; rejected noise does not replace or refresh it, and Clear resets it immediately. Stop preserves the context for a quick resume until its TTL expires. Russian STT variants `ОСИ`/`ОЗИ` and likely `OCI` are normalized to `OSI` only near networking-model terms, while Oracle Cloud Infrastructure wording is preserved.
 
 In **Local knowledge only** mode, Manual Ask and Live Assist use the same local lookup. Live Assist automatically renders a matched card as soon as the buffered utterance is complete; unmatched or ignored fragments update only the compact status and do not clear the last useful answer.
 

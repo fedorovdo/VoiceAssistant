@@ -22,6 +22,13 @@ try {
   }
 
   Write-Host ""
+  Write-Host "=== Development launcher policy tests ===" -ForegroundColor Green
+  & npm.cmd run test:launcher
+  if ($LASTEXITCODE -ne 0) {
+    throw "Development launcher policy tests failed with exit code $LASTEXITCODE."
+  }
+
+  Write-Host ""
   Write-Host "=== Backend tests ===" -ForegroundColor Green
   & npm.cmd run test:backend
   if ($LASTEXITCODE -ne 0) {

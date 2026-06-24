@@ -130,10 +130,10 @@ function isClearlyCompleteUtterance(combinedText: string, newestText: string): b
   if (isLikelyContinuation(newestText)) return false;
   const normalized = normalize(combinedText);
   const wordCount = normalized.split(" ").filter(Boolean).length;
-  const hasExplicitQuestion = /(?:что такое|из чего состоит|для чего (?:нужен|нужна|нужно|нужны|применяется|используется)|как работает|чем отличается|как (?:проверить|добавить|создать|выдать|дать|настроить|посмотреть|поменять|изменить|сменить|повысить|сделать))/i.test(normalized);
-  const hasStrongTechnicalTerm = /(?:\bdockerfile\b|\blinux\b|\bsudo\b|\bsudoers\b|\bwheel\b|\bpasswd\b|\bchmod\b|\bchown\b|\bdocker\b|\bkubernetes\b|\bkubectl\b|\bfirewall\b|\bsystemctl\b|\bjournalctl\b|\bactive directory\b|\bdns\b|\bdhcp\b|\bproxmox\b|порт|парол|пользовател)/i.test(normalized);
+  const hasExplicitQuestion = /(?:что такое|из чего состоит|для чего (?:нужен|нужна|нужно|нужны|применяется|используется)|как работает|чем отличается|на каком уровне|сколько уровней|где работает|расскажи(?:те)?|(?:схема|модель)\s+|как (?:проверить|добавить|создать|выдать|дать|настроить|посмотреть|поменять|изменить|сменить|повысить|сделать))/i.test(normalized);
+  const hasStrongTechnicalTerm = /(?:\bdockerfile\b|\blinux\b|\bsudo\b|\bsudoers\b|\bwheel\b|\bpasswd\b|\bchmod\b|\bchown\b|\bdocker\b|\bkubernetes\b|\bkubectl\b|\bfirewall\b|\bsystemctl\b|\bjournalctl\b|\bactive directory\b|\bdns\b|\bdhcp\b|\bproxmox\b|\btcp(?:\/ip)?\b|\btsp\/ip\b|\budp\b|\bosi\b|\boci\b|\barp\b|\bvlan\b|\bicmp\b|протокол|порт|парол|пользовател)/i.test(normalized);
 
-  if (/\?$/.test(newestText.trim()) && hasExplicitQuestion && hasStrongTechnicalTerm) return true;
+  if (hasStrongTerminalPunctuation(newestText) && hasExplicitQuestion && hasStrongTechnicalTerm) return true;
   return wordCount >= 5 && hasStrongTechnicalTerm && !isLikelyIncompleteStart(normalized);
 }
 
@@ -147,6 +147,8 @@ function isLikelyContinuation(text: string): boolean {
 }
 
 function isLikelyIncompleteStart(text: string): boolean {
+  const normalized = normalize(text);
+  if (/^(?:протокол\s+tcp\/ip|на\s+каком\s+уровне|сколько\s+уровней)$/.test(normalized)) return true;
   return /^(?:как (?:проверить|дать|добавить|создать|выдать|настроить|посмотреть|поменять|изменить|сменить|повысить|сделать)|команда для)(?:\s+[^.!?]+)?[?.!]?$/i.test(text)
     && text.split(" ").filter(Boolean).length <= 4;
 }

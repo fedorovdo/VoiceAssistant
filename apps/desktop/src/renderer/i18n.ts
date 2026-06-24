@@ -1,6 +1,8 @@
 import type { AppLanguage } from "@voiceassistant/shared";
 
 const ru = {
+  liveQueueLabel: "В очереди",
+  liveQueueFull: "Очередь Live Assist заполнена. Новый фрагмент пропущен.",
   subtitle: "Помощник для технических обсуждений",
   recognizedPanel: "Распознанный диалог или вопрос",
   recognizedHintMock: "Демонстрационные фрагменты появляются только после нажатия «Старт».",
@@ -161,6 +163,8 @@ const ru = {
 type TranslationKey = keyof typeof ru;
 
 const en: Record<TranslationKey, string> = {
+  liveQueueLabel: "Queued",
+  liveQueueFull: "The Live Assist queue is full. The new fragment was skipped.",
   subtitle: "Technical conversation learning assistant",
   recognizedPanel: "Recognized dialogue or question",
   recognizedHintMock: "Demo fragments appear only after you click Start.",
