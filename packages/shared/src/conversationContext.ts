@@ -84,11 +84,11 @@ interface PendingAnswerRequest {
 const topicTerms: Record<TechnicalTopic, string[]> = {
   "Docker Compose": ["docker compose", "docker-compose", "compose.yaml", "compose.yml"],
   Kubernetes: ["kubernetes", "k8s", "kubectl", "scheduler", "helm", "ingress", "deployment", "statefulset", "namespace", "кластер kubernetes", "кластер k8s"],
-  "Active Directory": ["active directory", "domain controller", "group policy", "gpo", "gpupdate", "dcdiag", "repadmin", "fsmo", "контроллер домена", "групповая политика"],
+  "Active Directory": ["active directory", "domain controller", "samba ad", "ad dc", "samba-tool", "group policy", "gpo", "gpupdate", "dcdiag", "repadmin", "fsmo", "контроллер домена", "групповая политика"],
   "DNS/DHCP": ["dns", "dhcp", "nslookup", "dig", "dns-запись", "dns запись", "dhcp lease", "аренда dhcp"],
   Proxmox: ["proxmox", "pve", "pvesm", "vzdump", "qm command", "qm list"],
   Docker: ["docker", "dockerfile", "docker image", "container", "registry", "контейнер", "образ docker"],
-  Linux: ["linux", "systemctl", "journalctl", "chmod", "chown", "passwd", "chage", "fstab", "bash", "df -h", "free -h", "ip addr", "ip route", "sudo", "sudoers", "wheel", "visudo", "usermod", "ufw", "firewall", "firewalld", "iptables", "sshd", "authorized_keys", "selinux"],
+  Linux: ["linux", "samba", "smbclient", "smb.conf", "cifs-utils", "systemctl", "journalctl", "chmod", "chown", "passwd", "chage", "fstab", "bash", "df -h", "free -h", "ip addr", "ip route", "sudo", "sudoers", "wheel", "visudo", "usermod", "ufw", "firewall", "firewalld", "iptables", "sshd", "authorized_keys", "selinux"],
   Networking: ["networking", "network", "nat", "port", "ping", "traceroute", "tracert", "netcat", "osi", "tcp", "tcp/ip", "tcp ip", "udp", "icmp", "arp", "vlan", "протокол tcp", "сетевая модель", "топология", "сетевая схема", "сетевые схемы", "маршрут", "сеть", "порт"],
   Git: ["git", "commit", "branch", "merge", "rebase", "pull request", "репозиторий", "коммит", "ветка git"]
 };
@@ -126,6 +126,8 @@ const explanatoryIntentPatterns = [
 ];
 
 const commandIntentPatterns = [
+  /(?:^|\s)(?:установка|установить|поставить)\s+samba(?:\s|$)/i,
+  /как\s+(?:установить|подключить|смонтировать|запустить)\s+(?:samba|smb)/i,
   /как (?:проверить|настроить|посмотреть|узнать|найти|запустить|остановить|перезапустить|сделать|собрать|пересобрать|повысить|изменить|поменять|сменить|дать|добавить)/i,
   /(?:сбросить|сменить)\s+парол/i,
   /(?:менять|меняем|заменить|замена)\s+парол/i,

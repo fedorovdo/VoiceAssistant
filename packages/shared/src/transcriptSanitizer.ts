@@ -34,6 +34,9 @@ const fillerPhrases = [
 const strongTechnicalTerms = [
   "active directory",
   "domain controller",
+  "samba ad",
+  "samba",
+  "smbclient",
   "group policy",
   "docker image",
   "dockerfile",

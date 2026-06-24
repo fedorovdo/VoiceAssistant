@@ -43,7 +43,7 @@ const intentMarkers = [
   "explain", "check", "show", "list", "troubleshoot"
 ];
 const contextMarkers = [
-  "linux", "systemd", "docker", "compose", "kubernetes", "k8s", "kubectl", "proxmox", "pve",
+  "linux", "systemd", "samba", "smb", "smbclient", "cifs", "docker", "compose", "kubernetes", "k8s", "kubectl", "proxmox", "pve",
   "active directory", " ad ", "windows", "powershell", "dns", "dhcp", "tcp", "udp", "firewall",
   "network", "сеть", "memory", "память"
 ];
@@ -102,6 +102,15 @@ export function lookupKnowledgeCards(text: string): KnowledgeCardLookupResult {
 }
 
 function scoreCard(knowledgeCard: KnowledgeCard, text: string): Omit<KnowledgeCandidateDebug, "cardId" | "title"> {
+  if (knowledgeCard.id.includes("samba") && /(?:танец|музык|фестивал|samba\s+de\s+amigo)/i.test(text)) {
+    return {
+      score: 0,
+      specificityBonus: 0,
+      accepted: false,
+      selected: false,
+      rejectionReason: "no_alias_phrase"
+    };
+  }
   const candidates = [knowledgeCard.title, ...knowledgeCard.aliases].map(normalize);
   let acceptedScore = 0;
   let acceptedSpecificityBonus = 0;

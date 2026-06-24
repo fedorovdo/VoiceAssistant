@@ -29,6 +29,9 @@ const explicitQuestionPatterns = [
 
 const technicalTerms = [
   "active directory",
+  "samba ad",
+  "samba",
+  "smbclient",
   "docker image",
   "kubernetes",
   "deployment",
@@ -52,6 +55,8 @@ const ignoredPhrases = [
 ];
 
 const rescueQuestionPatterns: Array<{ label: string; pattern: RegExp }> = [
+  { label: "как установить", pattern: /как\s+установить/i },
+  { label: "как подключить", pattern: /как\s+подключить/i },
   { label: "чем отличается", pattern: /чем\s+отличается/i },
   { label: "как проверить", pattern: /как\s+проверить/i },
   { label: "как добавить", pattern: /как\s+добавить/i },
@@ -79,6 +84,7 @@ const rescueQuestionPatterns: Array<{ label: string; pattern: RegExp }> = [
 
 const strongAdminTerms: Array<{ label: string; pattern: RegExp }> = [
   { label: "Active Directory", pattern: /\bactive\s+directory\b/i },
+  { label: "Samba", pattern: /\b(?:samba|smbclient)\b/i },
   { label: "Kubernetes", pattern: /\bkubernetes\b/i },
   { label: "Docker", pattern: /\bdocker\b/i },
   { label: "Proxmox", pattern: /\bproxmox\b/i },

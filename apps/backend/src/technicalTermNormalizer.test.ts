@@ -118,3 +118,14 @@ test("normalizeTechnicalTerms repairs safe spoken networking forms with context"
   assert.equal(normalizeTechnicalTerms("модель оси", context).text, "модель OSI");
   assert.equal(normalizeTechnicalTerms("уровень тцп", context).text, "уровень TCP");
 });
+
+test("normalizeTechnicalTerms repairs Samba speech only in technical context", () => {
+  assert.equal(normalizeTechnicalTerms("Что такое самба в линуксе?").text, "Что такое Samba в линуксе?");
+  assert.equal(normalizeTechnicalTerms("Установка самбы", { currentTopic: "Linux" }).text, "Установка Samba");
+  assert.equal(normalizeTechnicalTerms("самба ад", { currentTopic: "Active Directory" }).text, "Samba AD");
+  assert.equal(normalizeTechnicalTerms("самбa server").text, "Samba server");
+
+  for (const phrase of ["танец самба", "музыка самба", "фестиваль самбы", "что такое samba de amigo"]) {
+    assert.equal(normalizeTechnicalTerms(phrase).text, phrase);
+  }
+});

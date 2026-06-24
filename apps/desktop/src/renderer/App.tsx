@@ -40,6 +40,7 @@ import {
   resolveLiveAssistDecision,
   resolveAnswerSource,
   sanitizeTranscript,
+  SambaConversationContext,
   SequentialRequestQueue,
   shouldSearchLocalKnowledge,
   shouldUseLocalOnlyFastPath,
@@ -258,6 +259,7 @@ export function App() {
   const liveFragmentHandlerRef = useRef<(fragment: string, source: LiveFragmentSource, rawFragment: string, contextUsed: boolean, transcriptEventId: string) => void>(() => undefined);
   const conversationContextRef = useRef(new ConversationContextBuffer());
   const networkingContextRef = useRef(new NetworkingConversationContext());
+  const sambaContextRef = useRef(new SambaConversationContext());
   const utteranceBufferRef = useRef(new UtteranceBuffer());
   const utteranceSourceRef = useRef<LiveFragmentSource>("microphone");
   const utteranceNetworkingContextUsedRef = useRef(false);
@@ -377,15 +379,18 @@ export function App() {
     const transcriptEventId = createLiveEventTrace(rawText, now);
     const contextSnapshot = conversationContextRef.current.getSnapshot();
     const networkingSnapshot = networkingContextRef.current.getSnapshot(now);
+    const sambaSnapshot = sambaContextRef.current.getSnapshot(now);
     const normalizationContext = {
       currentTopic: contextSnapshot.currentTopic,
       contextText: [
         contextSnapshot.fragments.slice(-3).map((fragment) => fragment.text).join(" "),
-        networkingSnapshot.lastValidQuestion
+        networkingSnapshot.lastValidQuestion,
+        sambaSnapshot.lastValidRequest
       ].filter(Boolean).join(" ")
     };
     const earlyTechnicalText = normalizeTechnicalTerms(rawText, normalizationContext);
-    const earlyFollowUp = networkingContextRef.current.enrichFollowUp(earlyTechnicalText.text, now);
+    const earlySambaFollowUp = sambaContextRef.current.enrichFollowUp(earlyTechnicalText.text, now);
+    const earlyFollowUp = networkingContextRef.current.enrichFollowUp(earlySambaFollowUp.text, now);
     const sanitized = sanitizeTranscript(earlyFollowUp.text, settings.answerLanguage);
     updateLiveEventTrace(transcriptEventId, {
       normalizedTranscript: sanitized.text,
@@ -463,9 +468,11 @@ export function App() {
     }
 
     const technicalText = normalizeTechnicalTerms(candidate.text, normalizationContext);
-    const finalFollowUp = networkingContextRef.current.enrichFollowUp(technicalText.text, now);
+    const finalSambaFollowUp = sambaContextRef.current.enrichFollowUp(technicalText.text, now);
+    const finalFollowUp = networkingContextRef.current.enrichFollowUp(finalSambaFollowUp.text, now);
     const acceptedText = finalFollowUp.text;
-    const networkingContextUsed = earlyFollowUp.contextUsed || finalFollowUp.contextUsed;
+    const networkingContextUsed = earlyFollowUp.contextUsed || finalFollowUp.contextUsed
+      || earlySambaFollowUp.contextUsed || finalSambaFollowUp.contextUsed;
     const normalizedCandidate = normalizeTranscriptForComparison(acceptedText);
     if (!normalizedCandidate) {
       setSttCleanupStatus("skipped");
@@ -539,6 +546,7 @@ export function App() {
     }
 
     setNormalizedTerms(getNormalizedTermTargets([...earlyTechnicalText.replacements, ...technicalText.replacements]));
+    sambaContextRef.current.accept(acceptedText, now);
     setRecognizedText((currentText) => appendRecognizedText(currentText, acceptedText));
     setSttCleanupStatus("accepted");
     if (!liveAnswerQueueRef.current.getActive()) setRecognitionMessage("");
@@ -1146,6 +1154,7 @@ export function App() {
     }
     conversationContextRef.current.clear();
     networkingContextRef.current.clear();
+    sambaContextRef.current.clear();
     utteranceNetworkingContextUsedRef.current = false;
     lastRenderedLiveAnswerRef.current = undefined;
     liveRequestSequenceRef.current = 0;
@@ -1267,6 +1276,7 @@ export function App() {
     utteranceTranscriptEventIdRef.current = undefined;
     conversationContextRef.current.clear();
     networkingContextRef.current.clear();
+    sambaContextRef.current.clear();
     utteranceNetworkingContextUsedRef.current = false;
     lastRenderedLiveAnswerRef.current = undefined;
     liveRequestSequenceRef.current = 0;

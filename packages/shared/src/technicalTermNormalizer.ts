@@ -30,8 +30,13 @@ const ambiguousKubernetesContext = /(?:кластер|cluster|pod|поды|pods|
 const dockerComposeContext = /(?:docker|докер|контейнер|container|compose\s+(?:up|down|logs)|команда|command)/iu;
 const osiContext = /(?:схем|модел|уров|сет|протокол|networking|network|layer|protocol)/iu;
 const oracleCloudContext = /(?:oracle\s+cloud|oracle\s+cloud\s+infrastructure)/iu;
+const sambaTechnicalContext = /(?:linux|линукс|сервер|server|smb|cifs|share|шара|шару|установ|постав|подключ|смонт|mount|настро|smb\.conf|active\s+directory|\bad\b|domain\s+controller|контроллер\s+домена|что\s+такое|для\s+чего|расскажи)/iu;
+const sambaNonTechnicalContext = /(?:танец|музык|фестивал|samba\s+de\s+amigo)/iu;
 
 const rules: NormalizationRule[] = [
+  contextualRule("(?:самб[аaыу]|samb[аa])\\s+(?:ад|ad)", "Samba AD", "Samba AD", sambaTechnicalContext, sambaNonTechnicalContext),
+  contextualRule("(?:самб[аaыу]|samb[аa])", "Samba", "Samba", sambaTechnicalContext, sambaNonTechnicalContext),
+  contextualRule("smb", "SMB", "SMB", sambaTechnicalContext, sambaNonTechnicalContext),
   rule("(?:сервис\\s+кубернетес|кубернетес\\s+сервис)", "Kubernetes service", "Kubernetes service"),
   rule("(?:докер\\s+(?:образ|имидж)|образ\\s+докер)", "Docker image", "Docker image"),
   rule("слои\\s+докера", "Docker layers", "Docker layers"),

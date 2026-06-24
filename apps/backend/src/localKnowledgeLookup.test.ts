@@ -4,7 +4,8 @@ import {
   ConversationContextBuffer,
   lookupLocalKnowledge,
   normalizeTechnicalTerms,
-  resolveLiveAssistDecision
+  resolveLiveAssistDecision,
+  SambaConversationContext
 } from "@voiceassistant/shared";
 
 const basicQuestions = [
@@ -103,6 +104,94 @@ test("Manual and Live lookup agree for natural sudo and Docker layer phrases", (
     assert.equal(liveResult.bestMatch?.id, expectedCardId, query);
     assert.equal(liveResult.bestMatch?.id, manualResult.bestMatch?.id, query);
   }
+});
+
+test("Samba questions route to focused file server, client, and AD DC cards", () => {
+  const cases = [
+    ["Что такое Samba в Linux?", "linux-samba-overview"],
+    ["Установка Samba", "linux-samba-install"],
+    ["Как установить Samba?", "linux-samba-install"],
+    ["Как создать Samba шару?", "linux-samba-share"],
+    ["Как подключить SMB шару в Linux?", "linux-samba-client"],
+    ["Что такое Samba AD DC?", "active-directory-samba-ad-dc-overview"],
+    ["Как проверить репликацию Samba AD?", "active-directory-samba-ad-dc-overview"]
+  ] as const;
+
+  for (const [query, expectedCardId] of cases) {
+    assert.equal(lookupLocalKnowledge(normalizeTechnicalTerms(query).text).bestMatch?.id, expectedCardId, query);
+  }
+});
+
+test("Manual and Live local-only select the same focused Samba card", () => {
+  const cases = [
+    ["Что такое Samba в Linux?", "linux-samba-overview"],
+    ["Установка Samba", "linux-samba-install"],
+    ["Как создать Samba шару?", "linux-samba-share"],
+    ["Как подключить SMB шару в Linux?", "linux-samba-client"],
+    ["Что такое Samba AD DC?", "active-directory-samba-ad-dc-overview"]
+  ] as const;
+
+  for (const [query, expectedCardId] of cases) {
+    const normalized = normalizeTechnicalTerms(query).text;
+    const decision = new ConversationContextBuffer().add(normalized, 1_000, "balanced");
+    const manual = lookupLocalKnowledge(normalized);
+    const live = lookupLocalKnowledge(normalized, {
+      aggregatedText: decision.aggregatedText,
+      currentTopic: decision.currentTopic
+    });
+    const policy = resolveLiveAssistDecision({
+      contextDecision: decision,
+      answerSourceMode: "local-only",
+      hasLocalMatch: Boolean(live.bestMatch),
+      hasApiKey: false,
+      answerMode: "short"
+    });
+
+    assert.equal(manual.bestMatch?.id, expectedCardId, query);
+    assert.equal(live.bestMatch?.id, expectedCardId, query);
+    assert.equal(policy.action, "answer", query);
+  }
+});
+
+test("Samba role context resolves short follow-ups without hijacking generic requests", () => {
+  const cases = [
+    ["Установка Samba", "А как запустить?", "linux-samba-install"],
+    ["Как создать Samba шару?", "Как добавить пользователя?", "linux-samba-share"],
+    ["Что такое Samba AD DC?", "Как проверить репликацию?", "active-directory-samba-ad-dc-overview"]
+  ] as const;
+
+  for (const [contextText, followUp, expectedCardId] of cases) {
+    const sambaContext = new SambaConversationContext();
+    sambaContext.accept(contextText, 1_000);
+    const enriched = sambaContext.enrichFollowUp(followUp, 2_000);
+    assert.equal(enriched.contextUsed, true, followUp);
+    assert.equal(lookupLocalKnowledge(enriched.text).bestMatch?.id, expectedCardId, followUp);
+  }
+
+  assert.equal(lookupLocalKnowledge("Как добавить пользователя?").bestMatch, undefined);
+});
+
+test("nontechnical Samba dance and music phrases stay unmatched", () => {
+  for (const query of ["танец самба", "музыка самба", "фестиваль самбы", "что такое samba de amigo", "установка танца"]) {
+    assert.equal(lookupLocalKnowledge(normalizeTechnicalTerms(query).text).bestMatch, undefined, query);
+  }
+});
+
+test("Samba cards keep role separation and operational safety guidance", () => {
+  const overview = lookupLocalKnowledge("Что такое Samba в Linux?").bestMatch;
+  const install = lookupLocalKnowledge("Установка Samba").bestMatch;
+  const share = lookupLocalKnowledge("Как создать Samba шару?").bestMatch;
+  const client = lookupLocalKnowledge("Как подключить SMB шару в Linux?").bestMatch;
+  const ad = lookupLocalKnowledge("Что такое Samba AD DC?").bestMatch;
+
+  assert.deepEqual(
+    [overview?.id, install?.id, share?.id, client?.id, ad?.id],
+    ["linux-samba-overview", "linux-samba-install", "linux-samba-share", "linux-samba-client", "active-directory-samba-ad-dc-overview"]
+  );
+  assert.ok(share?.bullets.some((bullet) => bullet.includes("chmod 777")));
+  assert.ok(share?.commands.some((command) => command.includes("smbpasswd -a")));
+  assert.ok(client?.bullets.some((bullet) => bullet.includes("credentials")));
+  assert.ok(ad?.bullets.some((bullet) => bullet.includes("отдельная роль")));
 });
 
 test("Manual and Live lookup agree on focused Active Directory user actions", () => {

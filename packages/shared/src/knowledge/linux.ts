@@ -55,7 +55,89 @@ export const linuxKnowledgeCards: KnowledgeCard[] = [
   defineCard("linux-find", "Поиск файлов командой find", ["find command", "команда find", "как найти файл linux", "поиск файлов linux", "find examples"], "linux", "find ищет файлы по имени, типу, размеру, времени и другим признакам.", ["Ограничивайте начальный каталог, чтобы ускорить поиск.", "С -exec сначала проверьте выборку без изменяющей команды."], ["find /etc -type f -name '*.conf'", "find /var/log -type f -mtime -1", "find /tmp -type f -size +100M"], ["files", "grep", "large files"]),
   defineCard("linux-rsync", "Основы rsync", ["rsync basics", "команда rsync", "синхронизация файлов linux", "копировать через rsync", "rsync example"], "linux", "rsync эффективно синхронизирует каталоги локально или через SSH.", ["-a сохраняет основные атрибуты, -v показывает процесс.", "Перед --delete полезно выполнить dry-run."], ["rsync -avh SOURCE/ DEST/", "rsync -avhn --delete SOURCE/ DEST/", "rsync -avh DIR/ user@host:/backup/"], ["backup", "ssh", "files"]),
   defineCard("linux-cron", "Основы cron", ["cron basics", "что такое cron", "планировщик linux", "настроить cron", "cron job"], "linux", "cron запускает команды по расписанию от имени пользователя или системы.", ["Окружение cron минимально, поэтому используйте абсолютные пути.", "Перенаправляйте stdout и stderr в лог для диагностики."], ["systemctl status cron", "systemctl status crond", "journalctl -u cron"], ["crontab", "scheduler", "systemd timer"]),
-  defineCard("linux-crontab", "Примеры crontab", ["crontab examples", "crontab -e", "пример crontab", "как добавить задачу cron", "посмотреть cron задачи"], "linux", "crontab хранит пользовательские задания cron в формате минута, час, день, месяц, день недели.", ["Проверьте команду вручную перед добавлением в расписание.", "crontab -l показывает задания текущего пользователя."], ["crontab -l", "crontab -e", "0 2 * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1"], ["cron", "scheduler", "logs"])
+  defineCard("linux-crontab", "Примеры crontab", ["crontab examples", "crontab -e", "пример crontab", "как добавить задачу cron", "посмотреть cron задачи"], "linux", "crontab хранит пользовательские задания cron в формате минута, час, день, месяц, день недели.", ["Проверьте команду вручную перед добавлением в расписание.", "crontab -l показывает задания текущего пользователя."], ["crontab -l", "crontab -e", "0 2 * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1"], ["cron", "scheduler", "logs"]),
+  defineCard(
+    "linux-samba-overview",
+    "Samba в Linux",
+    [
+      "что такое samba", "что такое samba в linux", "расскажи про samba", "для чего samba",
+      "самба linux", "samba linux", "что такое самба", "samba сервер", "smb сервер linux"
+    ],
+    "linux",
+    "Samba реализует службы SMB/CIFS в Linux: публикует файловые и принтерные ресурсы и предоставляет клиентские инструменты для подключения к SMB.",
+    [
+      "Для классического файлового сервера основной конфигурационный файл — /etc/samba/smb.conf; перед перезапуском проверяйте его через testparm.",
+      "Samba может работать как Active Directory Domain Controller, но это отдельная роль и отдельный сценарий развертывания.",
+      "Имена systemd-служб отличаются: в RHEL-подобных системах часто smb/nmb, в Debian/Ubuntu — smbd/nmbd."
+    ],
+    ["samba --version", "smbd --version", "testparm", "systemctl status smb", "systemctl status smbd", "systemctl status nmb"],
+    ["samba", "smb", "cifs", "smb.conf", "file server", "share"]
+  ),
+  defineCard(
+    "linux-samba-install",
+    "Установка Samba",
+    [
+      "установка samba", "как установить samba", "установить samba в linux", "установить самбу",
+      "поставить samba", "установка samba server", "установить smb сервер", "как поставить samba на linux",
+      "как запустить samba после установки", "запустить samba"
+    ],
+    "linux",
+    "Устанавливает Samba file server и клиентские утилиты с учетом семейства Linux-дистрибутива.",
+    [
+      "RHEL/Rocky/Alma/RED OS-подобные системы используют dnf и обычно службы smb/nmb; Debian/Ubuntu используют apt и службы smbd/nmbd.",
+      "Имена пакетов и служб могут отличаться по версии дистрибутива — проверьте доступные units перед enable.",
+      "После установки проверьте версию и конфигурацию через samba --version и testparm."
+    ],
+    [
+      "sudo dnf install -y samba samba-client", "sudo systemctl enable --now smb", "sudo systemctl enable --now nmb",
+      "sudo apt update", "sudo apt install -y samba smbclient", "sudo systemctl enable --now smbd", "sudo systemctl enable --now nmbd",
+      "samba --version", "testparm", "systemctl status smb", "systemctl status smbd"
+    ],
+    ["samba", "smbd", "nmbd", "smbclient", "dnf", "apt", "systemctl"]
+  ),
+  defineCard(
+    "linux-samba-share",
+    "Создание Samba-шары",
+    [
+      "как создать samba шару", "создать шару samba", "настроить samba share", "настроить общую папку samba",
+      "создать smb шару", "расшарить папку linux", "smb conf share", "настроить smb conf",
+      "как добавить пользователя samba", "добавить пользователя samba share"
+    ],
+    "linux",
+    "Создание SMB-шары включает каталог и его Unix-права, отдельную секцию в smb.conf, Samba-пользователя и проверку конфигурации.",
+    [
+      "Разделяйте права файловой системы и параметры доступа Samba; chmod 777 не является нормальным исправлением.",
+      "Пример секции: [share], path = /srv/samba/share, browseable = yes, read only = no, valid users = @sambashare, create mask = 0660, directory mask = 2770.",
+      "Всегда запускайте testparm до reload/restart и открывайте firewall только для нужных источников и SMB-портов."
+    ],
+    [
+      "sudo mkdir -p /srv/samba/share", "sudo chown -R root:sambashare /srv/samba/share", "sudo chmod 2770 /srv/samba/share",
+      "sudo testparm", "sudo systemctl reload smb", "sudo systemctl reload smbd", "sudo smbpasswd -a USER",
+      "smbclient -L localhost -U USER"
+    ],
+    ["samba", "smb share", "smb.conf", "smbpasswd", "filesystem permissions", "sambashare"]
+  ),
+  defineCard(
+    "linux-samba-client",
+    "Подключение к SMB-шаре из Linux",
+    [
+      "как подключиться к samba", "подключить smb шару linux", "как подключить smb шару в linux", "смонтировать samba шару", "mount cifs",
+      "smbclient", "подключиться к windows share из linux", "подключить сетевую папку linux"
+    ],
+    "linux",
+    "Linux может просматривать SMB-ресурсы через smbclient или монтировать их как CIFS-файловую систему.",
+    [
+      "Для mount установите cifs-utils; для постоянного подключения можно использовать /etc/fstab.",
+      "Храните пароль в защищенном credentials-файле, а не в команде, скрипте или shell history.",
+      "Проверьте DNS, маршрут и узко настроенные firewall-правила до диагностики учетных данных."
+    ],
+    [
+      "smbclient -L //SERVER -U USER", "smbclient //SERVER/SHARE -U USER",
+      "sudo mount -t cifs //SERVER/SHARE /mnt/share -o username=USER",
+      "sudo apt install cifs-utils", "sudo dnf install cifs-utils"
+    ],
+    ["samba", "smbclient", "cifs-utils", "mount", "fstab", "credentials file"]
+  ),
 ];
 
 export const linuxTopicPack: KnowledgeTopicPack = {

@@ -31,7 +31,28 @@ export const activeDirectoryKnowledgeCards: KnowledgeCard[] = [
   defineCard("windows-event-viewer", "Основы Event Viewer", ["event viewer basics", "просмотр событий windows", "логи windows", "как посмотреть события windows", "get-winevent"], "active-directory", "Event Viewer хранит системные, security и application события Windows.", ["Фильтруйте по времени, level, source и Event ID.", "Для автоматизации используйте Get-WinEvent."], ["eventvwr.msc", "Get-WinEvent -LogName System -MaxEvents 50", "Get-WinEvent -FilterHashtable @{LogName='System'; Level=2}"], ["windows", "logs", "event id"]),
   defineCard("windows-service-status", "Статус Windows service", ["windows service status", "проверить службу windows", "get-service", "powershell get-service", "статус сервиса windows"], "active-directory", "Показывает состояние Windows services и тип запуска.", ["Get-Service удобен для статуса, Get-CimInstance дает дополнительные свойства.", "Проверьте зависимые службы и Event Viewer при ошибке запуска."], ["Get-Service -Name SERVICE", "sc.exe query SERVICE", "Get-CimInstance Win32_Service -Filter \"Name='SERVICE'\""], ["windows service", "powershell", "event viewer"]),
   defineCard("windows-service-restart", "Перезапуск Windows service", ["restart windows service", "перезапустить службу windows", "restart-service", "powershell restart-service"], "active-directory", "Останавливает и повторно запускает выбранную Windows service.", ["Команда требует соответствующих прав.", "При зависании stop проверьте PID и причину в Event Viewer."], ["Restart-Service -Name SERVICE", "Restart-Service -Name SERVICE -Force", "sc.exe stop SERVICE && sc.exe start SERVICE"], ["windows service", "powershell", "status"]),
-  defineCard("windows-test-netconnection", "Проверка сети: Test-NetConnection", ["test-netconnection", "powershell test-netconnection", "проверить порт powershell", "test tcp port windows"], "active-directory", "PowerShell-команда проверяет DNS, ICMP, route и TCP port в Windows.", ["TcpTestSucceeded — ключевой результат проверки порта.", "-DiagnoseRouting помогает увидеть выбранный route и source address."], ["Test-NetConnection HOST -Port 443", "Test-NetConnection HOST -TraceRoute", "Test-NetConnection HOST -DiagnoseRouting"], ["tcp", "port", "powershell"])
+  defineCard("windows-test-netconnection", "Проверка сети: Test-NetConnection", ["test-netconnection", "powershell test-netconnection", "проверить порт powershell", "test tcp port windows"], "active-directory", "PowerShell-команда проверяет DNS, ICMP, route и TCP port в Windows.", ["TcpTestSucceeded — ключевой результат проверки порта.", "-DiagnoseRouting помогает увидеть выбранный route и source address."], ["Test-NetConnection HOST -Port 443", "Test-NetConnection HOST -TraceRoute", "Test-NetConnection HOST -DiagnoseRouting"], ["tcp", "port", "powershell"]),
+  defineCard(
+    "active-directory-samba-ad-dc-overview",
+    "Samba Active Directory Domain Controller",
+    [
+      "что такое samba ad dc", "samba контроллер домена", "samba active directory", "samba domain controller",
+      "samba ad", "контроллер домена на linux", "заменить windows ad на samba", "samba tool",
+      "как проверить репликацию samba ad", "репликация samba ad"
+    ],
+    "active-directory",
+    "Samba AD DC предоставляет совместимые с Active Directory службы контроллера домена: LDAP, Kerberos, DNS-интеграцию, SYSVOL и поддержку групповых политик.",
+    [
+      "Это отдельная роль, отличная от классического standalone Samba file server; не совмещайте и не преобразуйте production-роли без плана.",
+      "Миграция существующего Windows AD требует проверки DNS, синхронизации времени, репликации, FSMO и SYSVOL.",
+      "Перед изменениями проверяйте состояние домена и репликации и планируйте откат."
+    ],
+    [
+      "samba-tool domain info DOMAIN", "samba-tool drs showrepl", "samba-tool fsmo show",
+      "samba-tool user list", "samba-tool group list", "samba-tool dbcheck"
+    ],
+    ["samba ad", "domain controller", "ldap", "kerberos", "dns", "sysvol", "gpo", "replication"]
+  ),
 ];
 
 export const activeDirectoryTopicPack: KnowledgeTopicPack = {

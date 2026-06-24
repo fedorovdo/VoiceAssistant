@@ -26,6 +26,13 @@ export const localKnowledgeRegressionCases: LocalKnowledgeRegressionCase[] = [
   { query: "Как отключить фаервол в Linux?", expectedCardId: "linux-firewall-control", expectedCommandFragment: "systemctl stop firewalld" },
   { query: "Как открыть порт в firewalld?", expectedCardId: "linux-firewall-control", expectedCommandFragment: "--add-port=8080/tcp" },
   { query: "Отключить безопасность в Linux", expectedCardId: "linux-security-disable-guidance", expectedCommandFragment: "getenforce", currentTopic: "Linux" },
+  { query: "Что такое Samba в Linux?", expectedCardId: "linux-samba-overview", expectedCommandFragment: "samba --version" },
+  { query: "Установка Samba", expectedCardId: "linux-samba-install", expectedCommandFragment: "dnf install -y samba" },
+  { query: "Как установить Samba?", expectedCardId: "linux-samba-install", expectedCommandFragment: "apt install -y samba" },
+  { query: "Как создать Samba шару?", expectedCardId: "linux-samba-share", expectedCommandFragment: "testparm" },
+  { query: "Как подключить SMB шару в Linux?", expectedCardId: "linux-samba-client", expectedCommandFragment: "smbclient -L" },
+  { query: "Что такое Samba AD DC?", expectedCardId: "active-directory-samba-ad-dc-overview", expectedCommandFragment: "samba-tool domain info" },
+  { query: "Как проверить репликацию Samba AD?", expectedCardId: "active-directory-samba-ad-dc-overview", expectedCommandFragment: "samba-tool drs showrepl" },
 
   { query: "Что такое Docker?", expectedCardId: "docker-overview", expectedCommandFragment: "docker info" },
   { query: "Из чего состоит Docker?", expectedCardId: "docker-overview", expectedCommandFragment: "docker info" },
@@ -85,5 +92,10 @@ export const localKnowledgeNegativeRegressionCases = [
   "уровни в игре",
   "схема квартиры",
   "что такое OCI в Oracle Cloud",
-  "сколько уровней в здании"
+  "сколько уровней в здании",
+  "танец самба",
+  "музыка самба",
+  "фестиваль самбы",
+  "что такое samba de amigo",
+  "установка танца"
 ];

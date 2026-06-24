@@ -130,8 +130,8 @@ function isClearlyCompleteUtterance(combinedText: string, newestText: string): b
   if (isLikelyContinuation(newestText)) return false;
   const normalized = normalize(combinedText);
   const wordCount = normalized.split(" ").filter(Boolean).length;
-  const hasExplicitQuestion = /(?:что такое|из чего состоит|для чего (?:нужен|нужна|нужно|нужны|применяется|используется)|как работает|чем отличается|на каком уровне|сколько уровней|где работает|расскажи(?:те)?|(?:схема|модель)\s+|как (?:проверить|добавить|создать|выдать|дать|настроить|посмотреть|поменять|изменить|сменить|повысить|сделать))/i.test(normalized);
-  const hasStrongTechnicalTerm = /(?:\bdockerfile\b|\blinux\b|\bsudo\b|\bsudoers\b|\bwheel\b|\bpasswd\b|\bchmod\b|\bchown\b|\bdocker\b|\bkubernetes\b|\bkubectl\b|\bfirewall\b|\bsystemctl\b|\bjournalctl\b|\bactive directory\b|\bdns\b|\bdhcp\b|\bproxmox\b|\btcp(?:\/ip)?\b|\btsp\/ip\b|\budp\b|\bosi\b|\boci\b|\barp\b|\bvlan\b|\bicmp\b|протокол|порт|парол|пользовател)/i.test(normalized);
+  const hasExplicitQuestion = /(?:что такое|из чего состоит|для чего (?:нужен|нужна|нужно|нужны|применяется|используется)|как работает|чем отличается|на каком уровне|сколько уровней|где работает|расскажи(?:те)?|(?:схема|модель)\s+|как (?:проверить|добавить|создать|выдать|дать|настроить|посмотреть|поменять|изменить|сменить|повысить|сделать|установить|подключить|смонтировать|запустить))/i.test(normalized);
+  const hasStrongTechnicalTerm = /(?:\bdockerfile\b|\blinux\b|\bsamba\b|\bsmbclient\b|\bcifs\b|\bsudo\b|\bsudoers\b|\bwheel\b|\bpasswd\b|\bchmod\b|\bchown\b|\bdocker\b|\bkubernetes\b|\bkubectl\b|\bfirewall\b|\bsystemctl\b|\bjournalctl\b|\bactive directory\b|\bdns\b|\bdhcp\b|\bproxmox\b|\btcp(?:\/ip)?\b|\btsp\/ip\b|\budp\b|\bosi\b|\boci\b|\barp\b|\bvlan\b|\bicmp\b|протокол|порт|парол|пользовател)/i.test(normalized);
 
   if (hasStrongTerminalPunctuation(newestText) && hasExplicitQuestion && hasStrongTechnicalTerm) return true;
   return wordCount >= 5 && hasStrongTechnicalTerm && !isLikelyIncompleteStart(normalized);
@@ -149,16 +149,16 @@ function isLikelyContinuation(text: string): boolean {
 function isLikelyIncompleteStart(text: string): boolean {
   const normalized = normalize(text);
   if (/^(?:протокол\s+tcp\/ip|на\s+каком\s+уровне|сколько\s+уровней)$/.test(normalized)) return true;
-  return /^(?:как (?:проверить|дать|добавить|создать|выдать|настроить|посмотреть|поменять|изменить|сменить|повысить|сделать)|команда для)(?:\s+[^.!?]+)?[?.!]?$/i.test(text)
+  return /^(?:как (?:проверить|дать|добавить|создать|выдать|настроить|посмотреть|поменять|изменить|сменить|повысить|сделать|установить|подключить|смонтировать|запустить)|команда для)(?:\s+[^.!?]+)?[?.!]?$/i.test(text)
     && text.split(" ").filter(Boolean).length <= 4;
 }
 
 function isContextContinuation(text: string): boolean {
-  return /^(?:в|во)\s+(?:linux|kubernetes|docker|proxmox|active directory)$/i.test(normalize(text));
+  return /^(?:в|во)\s+(?:linux|kubernetes|docker|samba|proxmox|active directory)$/i.test(normalize(text));
 }
 
 function isStandaloneTechnicalQualifier(text: string): boolean {
-  return /^(?:sudo|sudoers|kubectl|docker|linux|kubernetes|firewall)$/i.test(normalize(text));
+  return /^(?:sudo|sudoers|kubectl|docker|samba|linux|kubernetes|firewall)$/i.test(normalize(text));
 }
 
 function isCommandPrompt(text: string): boolean {
