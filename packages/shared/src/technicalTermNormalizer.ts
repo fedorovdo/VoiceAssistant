@@ -30,10 +30,16 @@ const ambiguousKubernetesContext = /(?:кластер|cluster|pod|поды|pods|
 const dockerComposeContext = /(?:docker|докер|контейнер|container|compose\s+(?:up|down|logs)|команда|command)/iu;
 const osiContext = /(?:схем|модел|уров|сет|протокол|networking|network|layer|protocol)/iu;
 const oracleCloudContext = /(?:oracle\s+cloud|oracle\s+cloud\s+infrastructure)/iu;
-const sambaTechnicalContext = /(?:linux|линукс|сервер|server|smb|cifs|share|шара|шару|установ|постав|подключ|смонт|mount|настро|smb\.conf|active\s+directory|\bad\b|domain\s+controller|контроллер\s+домена|что\s+такое|для\s+чего|расскажи)/iu;
-const sambaNonTechnicalContext = /(?:танец|музык|фестивал|samba\s+de\s+amigo)/iu;
+const sambaTechnicalContext = /(?:linux|линукс|сервер|server|smb|cifs|share|шара|шару|ресурс|диск|создат|расшар|опубликов|установ|постав|подключ|смонт|mount|настро|smb\.conf|active\s+directory|\bad\b|domain\s+controller|контроллер\s+домена|что\s+такое|для\s+чего|расскажи)/iu;
+const sambaNonTechnicalContext = /(?:танец|танц|музык|фестивал|samba\s+de\s+amigo)/iu;
 
 const rules: NormalizationRule[] = [
+  contextualRule("(?:самб[аa])\\s*[- ]?\\s*шаров", "Samba-шару", "Samba share", sambaTechnicalContext, sambaNonTechnicalContext),
+  contextualRule("(?:самб[аa])\\s*[- ]?\\s*шар[ауе]", (match) => match.toLowerCase().endsWith("е") ? "Samba-шаре" : match.toLowerCase().endsWith("а") ? "Samba-шара" : "Samba-шару", "Samba share", sambaTechnicalContext, sambaNonTechnicalContext),
+  contextualRule("(?:самб[аa]|samba)\\s*[- ]?\\s*ресурс", "Samba-ресурс", "Samba resource", sambaTechnicalContext, sambaNonTechnicalContext),
+  contextualRule("(?:самб[аa]|samba)\\s*[- ]?\\s*диск", "Samba-диск", "Samba disk", sambaTechnicalContext, sambaNonTechnicalContext),
+  contextualRule("smb\\s*[- ]?\\s*шар[аеу]", (match) => match.toLowerCase().endsWith("е") ? "SMB-шаре" : match.toLowerCase().endsWith("а") ? "SMB-шара" : "SMB-шару", "SMB share", sambaTechnicalContext, sambaNonTechnicalContext),
+  contextualRule("smb\\s*[- ]?\\s*ресурс", "SMB-ресурс", "SMB resource", sambaTechnicalContext, sambaNonTechnicalContext),
   contextualRule("(?:самб[аaыу]|samb[аa])\\s+(?:ад|ad)", "Samba AD", "Samba AD", sambaTechnicalContext, sambaNonTechnicalContext),
   contextualRule("(?:самб[аaыу]|samb[аa])", "Samba", "Samba", sambaTechnicalContext, sambaNonTechnicalContext),
   contextualRule("smb", "SMB", "SMB", sambaTechnicalContext, sambaNonTechnicalContext),
@@ -137,7 +143,7 @@ export function normalizeTechnicalTerms(
 
 function rule(
   source: string,
-  replacement: string,
+  replacement: string | ((match: string, ...groups: string[]) => string),
   target: string,
   context?: RegExp
 ): NormalizationRule {
@@ -152,7 +158,7 @@ function rule(
 
 function contextualRule(
   source: string,
-  replacement: string,
+  replacement: string | ((match: string, ...groups: string[]) => string),
   target: string,
   context: RegExp,
   excludeContext?: RegExp

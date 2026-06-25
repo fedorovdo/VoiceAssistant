@@ -1,6 +1,6 @@
 {
   "name": "@voiceassistant/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "VoiceAssistant Windows desktop application.",
   "author": "VoiceAssistant contributors",
   "private": true,
@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "npm run build:main && concurrently -k -n vite,electron \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "npm run build:main && vite build",
-    "build:main": "tsc -p tsconfig.electron.json",
+    "build:main": "tsc -p tsconfig.electron.json && npm run build:preload",
+    "build:preload": "esbuild src/main/preload.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/main/preload.cjs --external:electron",
     "preview": "vite preview",
     "package": "electron-builder --dir --win",
     "dist": "electron-builder --win portable"

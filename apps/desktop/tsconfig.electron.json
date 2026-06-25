@@ -7,5 +7,5 @@
     "rootDir": "src/main",
     "types": ["node"]
   },
-  "include": ["src/main"]
+  "include": ["src/main/main.ts"]
 }

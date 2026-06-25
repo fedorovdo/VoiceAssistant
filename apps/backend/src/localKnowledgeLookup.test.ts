@@ -153,6 +153,61 @@ test("Manual and Live local-only select the same focused Samba card", () => {
   }
 });
 
+test("Samba spoken share and client variants route by action", () => {
+  const cases = [
+    ["Как создать самбашаров?", "linux-samba-share", "testparm"],
+    ["Как создать Samba-ресурс?", "linux-samba-share", "smbpasswd"],
+    ["Как создать Samba-диск?", "linux-samba-share", "testparm"],
+    ["Как подключиться к SMB-шаре в Linux?", "linux-samba-client", "smbclient"],
+    ["Как подключить Samba-диск?", "linux-samba-client", "mount -t cifs"],
+    ["Как смонтировать SMB-ресурс?", "linux-samba-client", "mount -t cifs"]
+  ] as const;
+
+  for (const [rawQuery, expectedCardId, expectedCommand] of cases) {
+    const query = normalizeTechnicalTerms(rawQuery).text;
+    const result = lookupLocalKnowledge(query);
+    assert.equal(result.bestMatch?.id, expectedCardId, rawQuery);
+    assert.ok(result.bestMatch?.commands.some((command) => command.includes(expectedCommand)), rawQuery);
+  }
+});
+
+test("Manual and Live lookup agree on observed Samba spoken share/client phrases", () => {
+  const cases = [
+    ["Как создать самбашаров?", "linux-samba-share"],
+    ["Как создать Samba-ресурс?", "linux-samba-share"],
+    ["Как создать Samba-диск?", "linux-samba-share"],
+    ["Как подключиться к SMB-шаре в Linux?", "linux-samba-client"]
+  ] as const;
+
+  for (const [rawQuery, expectedCardId] of cases) {
+    const normalized = normalizeTechnicalTerms(rawQuery).text;
+    const decision = new ConversationContextBuffer().add(normalized, 1_000, "balanced");
+    const manual = lookupLocalKnowledge(normalized);
+    const live = lookupLocalKnowledge(normalized, {
+      aggregatedText: decision.aggregatedText,
+      currentTopic: decision.currentTopic
+    });
+
+    assert.equal(manual.bestMatch?.id, expectedCardId, rawQuery);
+    assert.equal(live.bestMatch?.id, expectedCardId, rawQuery);
+    assert.equal(live.bestMatch?.id, manual.bestMatch?.id, rawQuery);
+  }
+});
+
+test("generic disk, resource, and Samba music phrases do not become Samba matches", () => {
+  for (const rawQuery of [
+    "как создать диск в linux",
+    "создать ресурс проекта",
+    "подключить внешний диск",
+    "танец самба",
+    "создать музыкальный ресурс самба",
+    "как подключиться к ресурсу сайта"
+  ]) {
+    const query = normalizeTechnicalTerms(rawQuery).text;
+    assert.equal(lookupLocalKnowledge(query).bestMatch, undefined, rawQuery);
+  }
+});
+
 test("Samba role context resolves short follow-ups without hijacking generic requests", () => {
   const cases = [
     ["Установка Samba", "А как запустить?", "linux-samba-install"],

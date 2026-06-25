@@ -30,7 +30,13 @@ export const localKnowledgeRegressionCases: LocalKnowledgeRegressionCase[] = [
   { query: "Установка Samba", expectedCardId: "linux-samba-install", expectedCommandFragment: "dnf install -y samba" },
   { query: "Как установить Samba?", expectedCardId: "linux-samba-install", expectedCommandFragment: "apt install -y samba" },
   { query: "Как создать Samba шару?", expectedCardId: "linux-samba-share", expectedCommandFragment: "testparm" },
+  { query: "Как создать самбашаров?", expectedCardId: "linux-samba-share", expectedCommandFragment: "testparm" },
+  { query: "Как создать Samba-ресурс?", expectedCardId: "linux-samba-share", expectedCommandFragment: "smbpasswd" },
+  { query: "Как создать Samba-диск?", expectedCardId: "linux-samba-share", expectedCommandFragment: "testparm" },
   { query: "Как подключить SMB шару в Linux?", expectedCardId: "linux-samba-client", expectedCommandFragment: "smbclient -L" },
+  { query: "Как подключиться к SMB-шаре в Linux?", expectedCardId: "linux-samba-client", expectedCommandFragment: "smbclient -L" },
+  { query: "Как подключить Samba-диск?", expectedCardId: "linux-samba-client", expectedCommandFragment: "mount -t cifs" },
+  { query: "Как смонтировать SMB-ресурс?", expectedCardId: "linux-samba-client", expectedCommandFragment: "mount -t cifs" },
   { query: "Что такое Samba AD DC?", expectedCardId: "active-directory-samba-ad-dc-overview", expectedCommandFragment: "samba-tool domain info" },
   { query: "Как проверить репликацию Samba AD?", expectedCardId: "active-directory-samba-ad-dc-overview", expectedCommandFragment: "samba-tool drs showrepl" },
 
@@ -97,5 +103,10 @@ export const localKnowledgeNegativeRegressionCases = [
   "музыка самба",
   "фестиваль самбы",
   "что такое samba de amigo",
-  "установка танца"
+  "установка танца",
+  "как создать диск в linux",
+  "создать ресурс проекта",
+  "подключить внешний диск",
+  "создать музыкальный ресурс самба",
+  "как подключиться к ресурсу сайта"
 ];

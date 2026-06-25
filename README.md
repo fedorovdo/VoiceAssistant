@@ -2,6 +2,29 @@
 
 VoiceAssistant is a local technical learning assistant for live conversations. It helps developers, DevOps engineers, managers, designers, and junior specialists understand technical questions and terms without turning the app into a general meeting recorder.
 
+## Download for Windows
+
+Download the latest portable build from GitHub Releases: `https://github.com/OWNER/VoiceAssistant/releases`.
+
+Current release artifact: `VoiceAssistant-0.2.0-x64.exe`.
+
+No installation is required. Download the EXE, place it in a convenient folder, and run it. The application is currently unsigned, so Windows SmartScreen may warn that the publisher is unknown. Choose **More info** only if you trust the downloaded file and its checksum.
+
+Quick start:
+
+1. Download the portable EXE.
+2. Start VoiceAssistant.
+3. Open Settings.
+4. Add an OpenAI API key when microphone transcription or GPT answers are needed.
+5. Select a microphone.
+6. Select Manual or Live Assist.
+7. Select Local-only, Hybrid, or GPT-only.
+8. Press Start.
+
+Local-only answers do not require a GPT API call after transcription. Experimental microphone STT currently uses OpenAI transcription, so microphone recognition still requires an API key and internet access. Disabled and mock STT modes can be used without real audio transmission.
+
+VoiceAssistant is a local technical discussion assistant. It is also described in Russian as: Помощник для технических обсуждений.
+
 ## Project Structure
 
 ```text
@@ -116,6 +139,25 @@ The packaged app contains a bundled copy of the local backend. Electron checks `
 ### Current Packaging Limitation
 
 Windows packaging is experimental. The portable executable is currently unsigned and may trigger a Windows SmartScreen warning. Port `8787` must be available unless another VoiceAssistant backend is already running, and the app does not yet provide a UI for changing that production port.
+
+## Release Verification
+
+Before publishing a Windows build, run:
+
+```powershell
+npm run release:check
+npm run release:checksum
+```
+
+`release:check` stops stale development processes, runs the knowledge, backend, launcher, build, Windows verification, and packaged renderer smoke-test suites, builds the portable EXE, checks the versioned filename and size, scans generated text/config assets for real-looking OpenAI API keys, verifies packaged renderer/preload readiness, and runs `git diff --check`.
+
+`release:checksum` writes `VoiceAssistant-0.2.0-x64.exe.sha256` next to the portable EXE. The checksum file contains the SHA-256 hash and release filename.
+
+For a focused packaged app check after building `dist:desktop`, run:
+
+```powershell
+npm run test:packaged
+```
 
 ## Manual Mode
 

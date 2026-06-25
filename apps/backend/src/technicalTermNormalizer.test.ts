@@ -124,8 +124,15 @@ test("normalizeTechnicalTerms repairs Samba speech only in technical context", (
   assert.equal(normalizeTechnicalTerms("Установка самбы", { currentTopic: "Linux" }).text, "Установка Samba");
   assert.equal(normalizeTechnicalTerms("самба ад", { currentTopic: "Active Directory" }).text, "Samba AD");
   assert.equal(normalizeTechnicalTerms("самбa server").text, "Samba server");
+  assert.equal(normalizeTechnicalTerms("Как создать самбашаров?").text, "Как создать Samba-шару?");
+  assert.equal(normalizeTechnicalTerms("Как создать самба ресурс?").text, "Как создать Samba-ресурс?");
+  assert.equal(normalizeTechnicalTerms("Как создать Samba-диск?").text, "Как создать Samba-диск?");
+  assert.equal(normalizeTechnicalTerms("Как подключиться к SMB-шаре в Linux?").text, "Как подключиться к SMB-шаре в Linux?");
 
   for (const phrase of ["танец самба", "музыка самба", "фестиваль самбы", "что такое samba de amigo"]) {
     assert.equal(normalizeTechnicalTerms(phrase).text, phrase);
   }
+
+  assert.equal(normalizeTechnicalTerms("создать диск linux").text, "создать диск linux");
+  assert.equal(normalizeTechnicalTerms("ресурс по танцу самба").text, "ресурс по танцу самба");
 });
