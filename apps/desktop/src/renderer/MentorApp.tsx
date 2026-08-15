@@ -4,6 +4,7 @@ import type { AppLanguage } from "@voiceassistant/shared";
 import { useMentorRealtimeTranscription } from "./speech/useMentorRealtimeTranscription.js";
 import type { MentorRealtimeStatus } from "./speech/useMentorRealtimeTranscription.js";
 import "./mentor.css";
+import "./mentorHistory.css";
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8787";
 const settingsStorageKey = "voiceassistant.settings";
@@ -24,6 +25,15 @@ interface MentorTranscriptEntry {
 
 type MentorAnswerStatus = "idle" | "loading" | "ready" | "skipped" | "error";
 
+interface MentorAnswerHistoryEntry {
+  id: number;
+  question: string;
+  answer: string;
+  receivedAt: number;
+  latencyMs: number;
+  isError?: boolean;
+}
+
 interface AssistantApiResponse {
   answer?: string;
   error?: string;
@@ -40,14 +50,20 @@ export function MentorApp() {
   const entriesRef = useRef<MentorTranscriptEntry[]>([]);
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const autoFollowTranscriptRef = useRef(true);
+  const quickScrollRef = useRef<HTMLDivElement>(null);
+  const detailScrollRef = useRef<HTMLDivElement>(null);
+  const autoFollowQuickRef = useRef(true);
+  const autoFollowDetailRef = useRef(true);
   const [partialTranscript, setPartialTranscript] = useState("");
   const [deviceMessage, setDeviceMessage] = useState("");
   const [error, setError] = useState("");
-  const [quickAnswer, setQuickAnswer] = useState("");
-  const [detailAnswer, setDetailAnswer] = useState("");
+  const [quickAnswers, setQuickAnswers] = useState<MentorAnswerHistoryEntry[]>([]);
+  const [detailAnswers, setDetailAnswers] = useState<MentorAnswerHistoryEntry[]>([]);
   const [quickStatus, setQuickStatus] = useState<MentorAnswerStatus>("idle");
   const [detailStatus, setDetailStatus] = useState<MentorAnswerStatus>("idle");
-  const answerGenerationRef = useRef(0);
+  const answerEpochRef = useRef(0);
+  const answerSequenceRef = useRef(0);
+  const lastAnswerTriggerRef = useRef<{ text: string; at: number }>();
 
   const requestMentorAnswers = useCallback((latestText: string, previousEntries: MentorTranscriptEntry[]) => {
     const recentContext = previousEntries.slice(-5).map((entry) => entry.text);
@@ -55,12 +71,26 @@ export function MentorApp() {
       return;
     }
 
-    const generation = ++answerGenerationRef.current;
+    const normalizedTrigger = latestText.replace(/\s+/g, " ").trim().toLowerCase();
+    const now = Date.now();
+    const previousTrigger = lastAnswerTriggerRef.current;
+    if (
+      previousTrigger
+      && now - previousTrigger.at < 1800
+      && (previousTrigger.text.includes(normalizedTrigger) || normalizedTrigger.includes(previousTrigger.text))
+    ) {
+      return;
+    }
+    lastAnswerTriggerRef.current = { text: normalizedTrigger, at: now };
+
+    const epoch = answerEpochRef.current;
+    const requestId = ++answerSequenceRef.current;
+    const question = buildQuestionPreview(latestText, recentContext);
+
     setQuickStatus("loading");
     setDetailStatus("loading");
-    setQuickAnswer("");
-    setDetailAnswer("");
 
+    const quickStartedAt = performance.now();
     void requestMentorAnswer({
       apiKey,
       model,
@@ -69,20 +99,39 @@ export function MentorApp() {
       recentContext,
       mode: "short"
     }).then((answer) => {
-      if (generation !== answerGenerationRef.current) return;
+      if (epoch !== answerEpochRef.current) return;
       if (isSkipAnswer(answer)) {
         setQuickStatus("skipped");
-        setQuickAnswer("");
         return;
       }
-      setQuickAnswer(answer);
+      setQuickAnswers((current) => [
+        ...current,
+        {
+          id: requestId,
+          question,
+          answer,
+          receivedAt: Date.now(),
+          latencyMs: Math.round(performance.now() - quickStartedAt)
+        }
+      ].slice(-40));
       setQuickStatus("ready");
     }).catch((requestError) => {
-      if (generation !== answerGenerationRef.current) return;
+      if (epoch !== answerEpochRef.current) return;
+      setQuickAnswers((current) => [
+        ...current,
+        {
+          id: requestId,
+          question,
+          answer: toVisibleError(requestError, language),
+          receivedAt: Date.now(),
+          latencyMs: Math.round(performance.now() - quickStartedAt),
+          isError: true
+        }
+      ].slice(-40));
       setQuickStatus("error");
-      setQuickAnswer(toVisibleError(requestError, language));
     });
 
+    const detailStartedAt = performance.now();
     void requestMentorAnswer({
       apiKey,
       model,
@@ -91,18 +140,36 @@ export function MentorApp() {
       recentContext,
       mode: "learning"
     }).then((answer) => {
-      if (generation !== answerGenerationRef.current) return;
+      if (epoch !== answerEpochRef.current) return;
       if (isSkipAnswer(answer)) {
         setDetailStatus("skipped");
-        setDetailAnswer("");
         return;
       }
-      setDetailAnswer(answer);
+      setDetailAnswers((current) => [
+        ...current,
+        {
+          id: requestId,
+          question,
+          answer,
+          receivedAt: Date.now(),
+          latencyMs: Math.round(performance.now() - detailStartedAt)
+        }
+      ].slice(-40));
       setDetailStatus("ready");
     }).catch((requestError) => {
-      if (generation !== answerGenerationRef.current) return;
+      if (epoch !== answerEpochRef.current) return;
+      setDetailAnswers((current) => [
+        ...current,
+        {
+          id: requestId,
+          question,
+          answer: toVisibleError(requestError, language),
+          receivedAt: Date.now(),
+          latencyMs: Math.round(performance.now() - detailStartedAt),
+          isError: true
+        }
+      ].slice(-40));
       setDetailStatus("error");
-      setDetailAnswer(toVisibleError(requestError, language));
     });
   }, [apiKey, language, model]);
 
@@ -156,10 +223,16 @@ export function MentorApp() {
   }, [refreshDevices]);
 
   useEffect(() => {
-    const node = transcriptScrollRef.current;
-    if (!node || !autoFollowTranscriptRef.current) return;
-    node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+    scrollToBottomIfFollowing(transcriptScrollRef.current, autoFollowTranscriptRef.current);
   }, [entries]);
+
+  useEffect(() => {
+    scrollToBottomIfFollowing(quickScrollRef.current, autoFollowQuickRef.current);
+  }, [quickAnswers]);
+
+  useEffect(() => {
+    scrollToBottomIfFollowing(detailScrollRef.current, autoFollowDetailRef.current);
+  }, [detailAnswers]);
 
   async function startMentor() {
     setError("");
@@ -179,15 +252,18 @@ export function MentorApp() {
   }
 
   function clearMentor() {
-    answerGenerationRef.current += 1;
+    answerEpochRef.current += 1;
     entriesRef.current = [];
     setEntries([]);
     setPartialTranscript("");
-    setQuickAnswer("");
-    setDetailAnswer("");
+    setQuickAnswers([]);
+    setDetailAnswers([]);
     setQuickStatus("idle");
     setDetailStatus("idle");
+    lastAnswerTriggerRef.current = undefined;
     autoFollowTranscriptRef.current = true;
+    autoFollowQuickRef.current = true;
+    autoFollowDetailRef.current = true;
   }
 
   async function requestPermissionAndRefresh() {
@@ -208,23 +284,17 @@ export function MentorApp() {
     persistAudioDevice(deviceId);
   }
 
-  function handleTranscriptScroll() {
-    const node = transcriptScrollRef.current;
-    if (!node) return;
-    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-    autoFollowTranscriptRef.current = distanceFromBottom < 70;
-  }
-
   const selectedDeviceLabel = getSelectedDeviceLabel(audioDevices, selectedDeviceId, language);
   const statusLabel = getMentorStatusLabel(realtime.status, language);
   const hasTranscript = entries.length > 0 || partialTranscript.trim().length > 0;
+  const hasAnswers = quickAnswers.length > 0 || detailAnswers.length > 0;
   const activeTranscript = partialTranscript.trim()
     || (isListening
       ? language === "ru" ? "Слушаю следующую реплику…" : "Listening for the next turn…"
       : language === "ru" ? "Распознавание остановлено." : "Transcription stopped.");
 
   return (
-    <main className="mentor-shell">
+    <main className="mentor-shell mentor-shell-history">
       <header className="mentor-header mentor-header-compact">
         <div>
           <div className="mentor-eyebrow">MENTOR MODE · REALTIME</div>
@@ -270,7 +340,7 @@ export function MentorApp() {
           <button type="button" className="mentor-stop" onClick={stopMentor} disabled={!isListening}>
             <Square size={17} />{language === "ru" ? "Стоп" : "Stop"}
           </button>
-          <button type="button" className="mentor-secondary" onClick={clearMentor} disabled={!hasTranscript && !quickAnswer && !detailAnswer}>
+          <button type="button" className="mentor-secondary" onClick={clearMentor} disabled={!hasTranscript && !hasAnswers}>
             <Trash2 size={17} />{language === "ru" ? "Очистить" : "Clear"}
           </button>
         </div>
@@ -293,7 +363,7 @@ export function MentorApp() {
             ref={transcriptScrollRef}
             className="mentor-transcript"
             aria-live="polite"
-            onScroll={handleTranscriptScroll}
+            onScroll={() => updateAutoFollow(transcriptScrollRef.current, autoFollowTranscriptRef)}
           >
             {entries.length === 0 ? (
               <div className="mentor-empty mentor-empty-compact">
@@ -327,55 +397,97 @@ export function MentorApp() {
           </footer>
         </article>
 
-        <article className="mentor-panel mentor-answer-panel mentor-quick-panel mentor-resizable-panel">
+        <article className="mentor-panel mentor-answer-panel mentor-quick-panel mentor-resizable-panel mentor-answer-history-panel">
           <div className="mentor-answer-heading">
             <div>
               <div className="mentor-answer-kicker">⚡ {language === "ru" ? "БЫСТРО" : "QUICK"}</div>
-              <h2>{language === "ru" ? "Краткий ответ" : "Quick answer"}</h2>
+              <h2>{language === "ru" ? "Краткие ответы" : "Quick answers"}</h2>
             </div>
             <span className="mentor-resize-label">↕</span>
           </div>
-          <div className="mentor-answer-placeholder">
-            {renderAnswerPanel({
-              status: quickStatus,
-              answer: quickAnswer,
-              language,
-              loadingRu: "Понял вопрос. Готовлю короткую подсказку…",
-              loadingEn: "Question detected. Preparing a quick hint…",
-              idleRu: "Краткий ответ появится здесь, когда в разговоре будет распознан технический вопрос.",
-              idleEn: "A quick answer appears here when the conversation contains a technical question."
-            })}
+          <div
+            ref={quickScrollRef}
+            className="mentor-answer-history"
+            onScroll={() => updateAutoFollow(quickScrollRef.current, autoFollowQuickRef)}
+          >
+            {quickAnswers.length === 0 ? (
+              <div className="mentor-answer-empty">
+                {renderAnswerPanel({
+                  status: quickStatus,
+                  answer: "",
+                  language,
+                  loadingRu: "Понял вопрос. Готовлю короткую подсказку…",
+                  loadingEn: "Question detected. Preparing a quick hint…",
+                  idleRu: "Краткие ответы будут сохраняться здесь. Новые не удаляют предыдущие.",
+                  idleEn: "Quick answers are kept here. New answers do not remove previous ones."
+                })}
+              </div>
+            ) : quickAnswers.map((item) => (
+              <AnswerHistoryItem key={`quick-${item.id}`} item={item} language={language} />
+            ))}
+            {quickStatus === "loading" && quickAnswers.length > 0
+              ? <div className="mentor-answer-loading">{language === "ru" ? "Готовлю следующий краткий ответ…" : "Preparing the next quick answer…"}</div>
+              : null}
           </div>
         </article>
 
-        <article className="mentor-panel mentor-answer-panel mentor-detail-panel mentor-resizable-panel">
+        <article className="mentor-panel mentor-answer-panel mentor-detail-panel mentor-resizable-panel mentor-answer-history-panel">
           <div className="mentor-answer-heading">
             <div>
               <div className="mentor-answer-kicker">{language === "ru" ? "ПОДРОБНЕЕ" : "DETAIL"}</div>
-              <h2>{language === "ru" ? "Развёрнутое объяснение" : "Detailed explanation"}</h2>
+              <h2>{language === "ru" ? "Развёрнутые ответы" : "Detailed answers"}</h2>
             </div>
             <span className="mentor-resize-label">↕</span>
           </div>
-          <div className="mentor-answer-placeholder">
-            {renderAnswerPanel({
-              status: detailStatus,
-              answer: detailAnswer,
-              language,
-              loadingRu: "Параллельно собираю более полный ответ с контекстом и примером…",
-              loadingEn: "Building a fuller contextual answer in parallel…",
-              idleRu: "Здесь будет подробное объяснение с контекстом, примерами и командами, когда они уместны.",
-              idleEn: "A detailed contextual explanation with examples and useful commands appears here."
-            })}
+          <div
+            ref={detailScrollRef}
+            className="mentor-answer-history"
+            onScroll={() => updateAutoFollow(detailScrollRef.current, autoFollowDetailRef)}
+          >
+            {detailAnswers.length === 0 ? (
+              <div className="mentor-answer-empty">
+                {renderAnswerPanel({
+                  status: detailStatus,
+                  answer: "",
+                  language,
+                  loadingRu: "Параллельно собираю более полный ответ с контекстом и примером…",
+                  loadingEn: "Building a fuller contextual answer in parallel…",
+                  idleRu: "Подробные ответы будут накапливаться здесь и останутся доступны для прокрутки.",
+                  idleEn: "Detailed answers accumulate here and remain available for scrolling."
+                })}
+              </div>
+            ) : detailAnswers.map((item) => (
+              <AnswerHistoryItem key={`detail-${item.id}`} item={item} language={language} />
+            ))}
+            {detailStatus === "loading" && detailAnswers.length > 0
+              ? <div className="mentor-answer-loading">{language === "ru" ? "Готовлю следующий подробный ответ…" : "Preparing the next detailed answer…"}</div>
+              : null}
           </div>
         </article>
       </section>
 
       <div className="mentor-prototype-note mentor-prototype-note-compact">
         {language === "ru"
-          ? `Fast VAD ≈ 300 мс · контекст последних реплик · два параллельных ответа через ${model}.`
-          : `Fast VAD ≈ 300 ms · recent-turn context · two parallel answers through ${model}.`}
+          ? `Fast VAD ≈ 300 мс · контекст последних реплик · ответы сохраняются в истории · модель ${model}.`
+          : `Fast VAD ≈ 300 ms · recent-turn context · answer history is preserved · model ${model}.`}
       </div>
     </main>
+  );
+}
+
+function AnswerHistoryItem({ item, language }: { item: MentorAnswerHistoryEntry; language: AppLanguage }) {
+  return (
+    <section className={`mentor-answer-item ${item.isError ? "error" : ""}`}>
+      <div className="mentor-answer-item-meta">
+        <time>{formatTime(item.receivedAt)}</time>
+        <span>{item.latencyMs} ms</span>
+      </div>
+      <div className="mentor-answer-question">{item.question}</div>
+      <div className="mentor-answer-text">{item.answer}</div>
+      <div className="mentor-answer-item-footer">
+        {language === "ru" ? "Ответ сохранён в истории" : "Saved in answer history"}
+      </div>
+    </section>
   );
 }
 
@@ -471,6 +583,27 @@ function renderAnswerPanel(options: {
   if (options.status === "ready" || options.status === "error") return options.answer;
   if (options.status === "skipped") return options.language === "ru" ? "Слушаю дальше. Отдельного вопроса для ответа пока нет." : "Listening on. No separate question needs an answer yet.";
   return options.language === "ru" ? options.idleRu : options.idleEn;
+}
+
+function buildQuestionPreview(latestText: string, recentContext: string[]): string {
+  const latest = latestText.replace(/\s+/g, " ").trim();
+  if (latest.length >= 28 || recentContext.length === 0) {
+    return latest.length > 240 ? `${latest.slice(0, 240)}…` : latest;
+  }
+
+  const combined = [...recentContext.slice(-1), latest].join(" ").replace(/\s+/g, " ").trim();
+  return combined.length > 240 ? `${combined.slice(0, 240)}…` : combined;
+}
+
+function scrollToBottomIfFollowing(node: HTMLDivElement | null, shouldFollow: boolean) {
+  if (!node || !shouldFollow) return;
+  node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+}
+
+function updateAutoFollow(node: HTMLDivElement | null, followRef: { current: boolean }) {
+  if (!node) return;
+  const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+  followRef.current = distanceFromBottom < 70;
 }
 
 function isSkipAnswer(answer: string): boolean {
