@@ -26,6 +26,7 @@ interface UseMentorRealtimeTranscriptionOptions {
   apiKey: string;
   language: AppLanguage;
   onTranscript: (text: string) => void;
+  onPartialTranscript?: (text: string) => void;
   onError?: (message: string) => void;
 }
 
@@ -33,6 +34,7 @@ interface RealtimeServerEvent {
   type?: string;
   transcript?: string;
   delta?: string;
+  item_id?: string;
   error?: {
     message?: string;
     code?: string;
@@ -54,19 +56,26 @@ export function useMentorRealtimeTranscription(options: UseMentorRealtimeTranscr
   const streamRef = useRef<MediaStream>();
   const sessionRef = useRef(0);
   const speechStoppedAtRef = useRef<number>();
+  const partialByItemRef = useRef(new Map<string, string>());
+  const latestPartialItemRef = useRef<string>();
   const onTranscriptRef = useRef(options.onTranscript);
+  const onPartialTranscriptRef = useRef(options.onPartialTranscript);
   const onErrorRef = useRef(options.onError);
   const [status, setStatus] = useState<MentorRealtimeStatus>("idle");
   const [diagnostics, setDiagnostics] = useState<MentorRealtimeDiagnostics>(initialDiagnostics);
 
   useEffect(() => {
     onTranscriptRef.current = options.onTranscript;
+    onPartialTranscriptRef.current = options.onPartialTranscript;
     onErrorRef.current = options.onError;
-  }, [options.onError, options.onTranscript]);
+  }, [options.onError, options.onPartialTranscript, options.onTranscript]);
 
   const stop = useCallback(() => {
     sessionRef.current += 1;
     speechStoppedAtRef.current = undefined;
+    partialByItemRef.current.clear();
+    latestPartialItemRef.current = undefined;
+    onPartialTranscriptRef.current?.("");
 
     const channel = channelRef.current;
     channelRef.current = undefined;
@@ -213,6 +222,17 @@ export function useMentorRealtimeTranscription(options: UseMentorRealtimeTranscr
         return;
       }
 
+      if (event.type === "conversation.item.input_audio_transcription.delta") {
+        const delta = event.delta ?? "";
+        if (!delta) return;
+        const itemId = event.item_id ?? "latest";
+        const nextPartial = `${partialByItemRef.current.get(itemId) ?? ""}${delta}`;
+        partialByItemRef.current.set(itemId, nextPartial);
+        latestPartialItemRef.current = itemId;
+        onPartialTranscriptRef.current?.(nextPartial);
+        return;
+      }
+
       if (event.type === "conversation.item.input_audio_transcription.completed") {
         const transcript = event.transcript?.trim();
         const now = Date.now();
@@ -220,6 +240,15 @@ export function useMentorRealtimeTranscription(options: UseMentorRealtimeTranscr
           ? undefined
           : now - speechStoppedAtRef.current;
         speechStoppedAtRef.current = undefined;
+
+        const itemId = event.item_id ?? latestPartialItemRef.current;
+        if (itemId) {
+          partialByItemRef.current.delete(itemId);
+          if (latestPartialItemRef.current === itemId) {
+            latestPartialItemRef.current = undefined;
+            onPartialTranscriptRef.current?.("");
+          }
+        }
 
         setDiagnostics((current) => ({
           ...current,
@@ -232,6 +261,9 @@ export function useMentorRealtimeTranscription(options: UseMentorRealtimeTranscr
       }
 
       if (event.type === "conversation.item.input_audio_transcription.failed") {
+        partialByItemRef.current.clear();
+        latestPartialItemRef.current = undefined;
+        onPartialTranscriptRef.current?.("");
         const details = [event.error?.code, event.error?.message].filter(Boolean).join(": ");
         const message = sanitizeError(details || "OpenAI Realtime transcription failed.");
         setStatus("error");
