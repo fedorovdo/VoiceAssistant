@@ -239,7 +239,7 @@ export function buildApp() {
   return app;
 }
 
-function buildRealtimeMultipartBody(sdp: string, session: unknown): { body: Buffer; contentType: string } {
+function buildRealtimeMultipartBody(sdp: string, session: unknown): { body: string; contentType: string } {
   const boundary = `----voiceassistant-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const body = [
     `--${boundary}\r\n`,
@@ -254,7 +254,7 @@ function buildRealtimeMultipartBody(sdp: string, session: unknown): { body: Buff
   ].join("");
 
   return {
-    body: Buffer.from(body, "utf8"),
+    body,
     contentType: `multipart/form-data; boundary=${boundary}`
   };
 }
