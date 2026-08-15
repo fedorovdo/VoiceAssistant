@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { App } from "./App.js";
+import { RootApp } from "./RootApp.js";
 import "./styles.css";
 
 declare global {
@@ -62,7 +62,7 @@ if (!rootElement) {
     <React.StrictMode>
       <ErrorBoundary>
         <RendererReadySignal />
-        <App />
+        <RootApp />
       </ErrorBoundary>
     </React.StrictMode>
   );
