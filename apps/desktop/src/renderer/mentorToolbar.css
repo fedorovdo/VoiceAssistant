@@ -1,0 +1,142 @@
+.mentor-scale-surface {
+  --mentor-text-scale: 0.9;
+}
+
+.mentor-scale-surface .mentor-header-compact h1 {
+  font-size: calc(38px * var(--mentor-text-scale));
+}
+
+.mentor-scale-surface .mentor-header-compact p {
+  font-size: calc(13px * var(--mentor-text-scale));
+}
+
+.mentor-scale-surface .mentor-eyebrow,
+.mentor-scale-surface .mentor-panel-title span,
+.mentor-scale-surface .mentor-answer-kicker,
+.mentor-scale-surface .mentor-live-line span,
+.mentor-scale-surface .mentor-diagnostics,
+.mentor-scale-surface .mentor-resize-label,
+.mentor-scale-surface .mentor-prototype-note {
+  font-size: calc(10px * var(--mentor-text-scale));
+}
+
+.mentor-scale-surface .mentor-listening-pill,
+.mentor-scale-surface .mentor-controls button,
+.mentor-scale-surface .mentor-empty span {
+  font-size: calc(13px * var(--mentor-text-scale));
+}
+
+.mentor-scale-surface .mentor-device-select label,
+.mentor-scale-surface .mentor-counter {
+  font-size: calc(12px * var(--mentor-text-scale));
+}
+
+.mentor-scale-surface .mentor-device-select select {
+  font-size: calc(14px * var(--mentor-text-scale));
+}
+
+.mentor-scale-surface .mentor-device-select small,
+.mentor-scale-surface .mentor-device-message,
+.mentor-scale-surface .mentor-error,
+.mentor-scale-surface .mentor-transcript-entry time {
+  font-size: calc(11px * var(--mentor-text-scale));
+}
+
+.mentor-scale-surface .mentor-panel-title h2,
+.mentor-scale-surface .mentor-answer-panel h2 {
+  font-size: calc(19px * var(--mentor-text-scale));
+}
+
+.mentor-scale-surface .mentor-empty strong,
+.mentor-scale-surface .mentor-transcript-entry p {
+  font-size: calc(16px * var(--mentor-text-scale));
+}
+
+.mentor-scale-surface .mentor-live-line p,
+.mentor-scale-surface .mentor-answer-placeholder {
+  font-size: calc(15px * var(--mentor-text-scale));
+}
+
+.mentor-top-tools {
+  position: fixed;
+  top: 32px;
+  right: 170px;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mentor-text-scale-control,
+.mentor-header-switch {
+  min-height: 34px;
+  border: 1px solid #d5dae6;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 7px 18px rgba(31, 43, 74, 0.08);
+  color: #475064;
+  backdrop-filter: blur(10px);
+}
+
+.mentor-text-scale-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.mentor-text-scale-control input[type="range"] {
+  width: 82px;
+  accent-color: #3568e8;
+  cursor: pointer;
+}
+
+.mentor-scale-a {
+  color: #737b8b;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.mentor-scale-value {
+  min-width: 34px;
+  color: #3d4658;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.mentor-header-switch {
+  padding: 0 12px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mentor-header-switch:hover {
+  border-color: #9fb7f4;
+  color: #245eda;
+}
+
+@media (max-width: 1180px) {
+  .mentor-top-tools {
+    top: 28px;
+    right: 150px;
+  }
+
+  .mentor-text-scale-control input[type="range"] {
+    width: 64px;
+  }
+}
+
+@media (max-width: 900px) {
+  .mentor-top-tools {
+    top: 14px;
+    right: 14px;
+  }
+
+  .mentor-text-scale-control {
+    display: none;
+  }
+}
