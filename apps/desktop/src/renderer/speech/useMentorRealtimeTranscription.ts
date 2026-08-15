@@ -32,8 +32,11 @@ interface UseMentorRealtimeTranscriptionOptions {
 interface RealtimeServerEvent {
   type?: string;
   transcript?: string;
+  delta?: string;
   error?: {
     message?: string;
+    code?: string;
+    type?: string;
   };
 }
 
@@ -205,6 +208,11 @@ export function useMentorRealtimeTranscription(options: UseMentorRealtimeTranscr
         return;
       }
 
+      if (event.type === "input_audio_buffer.committed") {
+        setStatus("transcribing");
+        return;
+      }
+
       if (event.type === "conversation.item.input_audio_transcription.completed") {
         const transcript = event.transcript?.trim();
         const now = Date.now();
@@ -220,6 +228,14 @@ export function useMentorRealtimeTranscription(options: UseMentorRealtimeTranscr
         }));
         if (transcript) onTranscriptRef.current(transcript);
         setStatus("listening");
+        return;
+      }
+
+      if (event.type === "conversation.item.input_audio_transcription.failed") {
+        const details = [event.error?.code, event.error?.message].filter(Boolean).join(": ");
+        const message = sanitizeError(details || "OpenAI Realtime transcription failed.");
+        setStatus("error");
+        onErrorRef.current?.(message);
         return;
       }
 
