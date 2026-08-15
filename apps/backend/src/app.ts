@@ -113,7 +113,7 @@ export function buildApp() {
   app.post<{ Body: RealtimeConnectRequest; Reply: RealtimeConnectResponse | { error: string } }>(
     "/api/realtime/connect",
     async (request, reply) => {
-      const sdp = normalizeOptionalString(request.body?.sdp);
+      const sdp = normalizeSdpOffer(request.body?.sdp);
       const apiKey = normalizeOptionalString(request.body?.apiKey);
       const language = request.body?.language === "en" ? "en" : "ru";
 
@@ -257,6 +257,17 @@ function buildRealtimeMultipartBody(sdp: string, session: unknown): { body: stri
     body,
     contentType: `multipart/form-data; boundary=${boundary}`
   };
+}
+
+function normalizeSdpOffer(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const normalizedLineEndings = value.replace(/\r\n|\r|\n/g, "\r\n");
+  return normalizedLineEndings.endsWith("\r\n")
+    ? normalizedLineEndings
+    : `${normalizedLineEndings}\r\n`;
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {
