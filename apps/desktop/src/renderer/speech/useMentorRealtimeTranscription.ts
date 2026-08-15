@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MutableRefObject } from "react";
 import type { AppLanguage } from "@voiceassistant/shared";
 
 export type MentorRealtimeStatus =
@@ -249,7 +250,7 @@ export function useMentorRealtimeTranscription(options: UseMentorRealtimeTranscr
 function waitForIceGathering(
   peer: RTCPeerConnection,
   session: number,
-  sessionRef: React.MutableRefObject<number>
+  sessionRef: MutableRefObject<number>
 ): Promise<void> {
   if (peer.iceGatheringState === "complete") return Promise.resolve();
 
