@@ -150,16 +150,14 @@ export function buildApp() {
       };
 
       try {
-        const form = new FormData();
-        form.append("sdp", new Blob([sdp], { type: "application/sdp" }), "offer.sdp");
-        form.append("session", new Blob([JSON.stringify(session)], { type: "application/json" }), "session.json");
-
+        const multipartBody = buildRealtimeMultipartBody(sdp, session);
         const response = await fetch("https://api.openai.com/v1/realtime/calls", {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${apiKey}`
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": multipartBody.contentType
           },
-          body: form
+          body: multipartBody.body
         });
 
         const responseBody = await response.text();
@@ -239,6 +237,26 @@ export function buildApp() {
   });
 
   return app;
+}
+
+function buildRealtimeMultipartBody(sdp: string, session: unknown): { body: Buffer; contentType: string } {
+  const boundary = `----voiceassistant-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const body = [
+    `--${boundary}\r\n`,
+    `Content-Disposition: form-data; name="sdp"\r\n`,
+    `Content-Type: application/sdp\r\n\r\n`,
+    sdp,
+    `\r\n--${boundary}\r\n`,
+    `Content-Disposition: form-data; name="session"\r\n`,
+    `Content-Type: application/json\r\n\r\n`,
+    JSON.stringify(session),
+    `\r\n--${boundary}--\r\n`
+  ].join("");
+
+  return {
+    body: Buffer.from(body, "utf8"),
+    contentType: `multipart/form-data; boundary=${boundary}`
+  };
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {
