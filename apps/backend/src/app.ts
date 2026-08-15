@@ -16,6 +16,24 @@ const answerModes: AnswerMode[] = ["short", "interview", "learning"];
 const workModes: WorkMode[] = ["manual", "live"];
 const answerLanguages: AppLanguage[] = ["ru", "en"];
 
+interface RealtimeConnectRequest {
+  sdp?: string;
+  apiKey?: string;
+  language?: AppLanguage;
+}
+
+interface RealtimeConnectResponse {
+  sdp: string;
+  callId?: string;
+}
+
+const mentorTranscriptionPrompt = [
+  "Technical discussion in Russian with possible English IT terminology.",
+  "Expect terms from Linux, Windows Server, Active Directory, networking, Docker, Kubernetes, Proxmox, Zabbix, Samba and DevOps.",
+  "Common terms include TCP/IP, OSI, DNS, DHCP, VLAN, GPO, systemd, SELinux, Dockerfile, Deployment, ReplicaSet, Pod, Service and Ingress.",
+  "Preserve technical product names, commands, acronyms and numbers accurately."
+].join(" ");
+
 export function buildApp() {
   const app = Fastify({
     logger: true
@@ -92,6 +110,83 @@ export function buildApp() {
     }
   );
 
+  app.post<{ Body: RealtimeConnectRequest; Reply: RealtimeConnectResponse | { error: string } }>(
+    "/api/realtime/connect",
+    async (request, reply) => {
+      const sdp = normalizeOptionalString(request.body?.sdp);
+      const apiKey = normalizeOptionalString(request.body?.apiKey);
+      const language = request.body?.language === "en" ? "en" : "ru";
+
+      if (!sdp) {
+        return reply.status(400).send({ error: "Field 'sdp' is required." });
+      }
+
+      if (!apiKey) {
+        return reply.status(400).send({ error: "Field 'apiKey' is required." });
+      }
+
+      const session = {
+        type: "realtime",
+        model: "gpt-realtime-mini",
+        output_modalities: ["text"],
+        audio: {
+          input: {
+            noise_reduction: null,
+            transcription: {
+              model: "gpt-4o-mini-transcribe",
+              language,
+              prompt: mentorTranscriptionPrompt
+            },
+            turn_detection: {
+              type: "server_vad",
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 800,
+              create_response: false,
+              interrupt_response: false
+            }
+          }
+        }
+      };
+
+      try {
+        const form = new FormData();
+        form.append("sdp", new Blob([sdp], { type: "application/sdp" }), "offer.sdp");
+        form.append("session", new Blob([JSON.stringify(session)], { type: "application/json" }), "session.json");
+
+        const response = await fetch("https://api.openai.com/v1/realtime/calls", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`
+          },
+          body: form
+        });
+
+        const responseBody = await response.text();
+        if (!response.ok) {
+          request.log.warn(
+            { status: response.status, body: sanitizeOpenAiResponse(responseBody) },
+            "realtime WebRTC handshake failed"
+          );
+          return reply.status(502).send({
+            error: response.status === 401
+              ? "OpenAI rejected the API key. Check the key in settings."
+              : `OpenAI Realtime connection failed with status ${response.status}.`
+          });
+        }
+
+        const location = response.headers.get("location") ?? undefined;
+        const callId = location?.split("/").filter(Boolean).at(-1);
+        return { sdp: responseBody, callId };
+      } catch (error) {
+        request.log.warn({ err: sanitizeErrorForLogs(error) }, "realtime WebRTC handshake failed");
+        return reply.status(502).send({
+          error: "Could not establish an OpenAI Realtime connection."
+        });
+      }
+    }
+  );
+
   app.post("/api/speech/transcribe", async (request, reply) => {
     let audio: Buffer | undefined;
     let filename = "audio.webm";
@@ -153,6 +248,10 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function sanitizeOpenAiResponse(body: string): string {
+  return body.replace(/sk-(?:proj-)?[A-Za-z0-9_-]{8,}/g, "[redacted-api-key]").slice(0, 500);
 }
 
 function sanitizeErrorForLogs(error: unknown) {
