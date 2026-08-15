@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Mic, Play, RefreshCw, Square, Trash2 } from "lucide-react";
 import type { AppLanguage } from "@voiceassistant/shared";
-import { useMentorTranscriptionQueue } from "./speech/useMentorTranscriptionQueue.js";
-import { useMicrophoneRecorder } from "./speech/useMicrophoneRecorder.js";
+import { useMentorRealtimeTranscription } from "./speech/useMentorRealtimeTranscription.js";
+import type { MentorRealtimeStatus } from "./speech/useMentorRealtimeTranscription.js";
 import "./mentor.css";
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8787";
@@ -39,20 +39,15 @@ export function MentorApp() {
     ].slice(-200));
   }, []);
 
-  const transcription = useMentorTranscriptionQueue({
+  const realtime = useMentorRealtimeTranscription({
     backendUrl,
     apiKey,
     language,
     onTranscript: appendTranscript,
-    maxPendingChunks: 10
+    onError: setError
   });
 
-  const recorder = useMicrophoneRecorder({
-    onChunk: transcription.enqueueChunk,
-    enableAudioLevel: false
-  });
-
-  const isListening = recorder.status === "recording" || recorder.status === "requesting_permission";
+  const isListening = isRealtimeActive(realtime.status);
 
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) {
@@ -80,18 +75,16 @@ export function MentorApp() {
     setError("");
     if (!apiKey.trim()) {
       setError(language === "ru"
-        ? "Для первого прототипа Собеседника нужен API-ключ OpenAI для распознавания речи."
-        : "The first Mentor prototype requires an OpenAI API key for speech transcription.");
+        ? "Для Realtime-распознавания нужен API-ключ OpenAI из основных настроек VoiceAssistant."
+        : "Realtime transcription requires the OpenAI API key from the main VoiceAssistant settings.");
       return;
     }
 
-    transcription.startSession();
-    await recorder.start(selectedDeviceId);
+    await realtime.start(selectedDeviceId);
   }
 
   function stopMentor() {
-    recorder.stop();
-    transcription.stopSession();
+    realtime.stop();
   }
 
   async function requestPermissionAndRefresh() {
@@ -113,17 +106,17 @@ export function MentorApp() {
   }
 
   const selectedDeviceLabel = getSelectedDeviceLabel(audioDevices, selectedDeviceId, language);
-  const statusLabel = getMentorStatusLabel(recorder.status, transcription.status, language);
+  const statusLabel = getMentorStatusLabel(realtime.status, language);
 
   return (
     <main className="mentor-shell">
       <header className="mentor-header">
         <div>
-          <div className="mentor-eyebrow">MENTOR MODE · PROTOTYPE 1</div>
+          <div className="mentor-eyebrow">MENTOR MODE · REALTIME PROTOTYPE</div>
           <h1>{language === "ru" ? "Технический собеседник" : "Technical Mentor"}</h1>
           <p>{language === "ru"
-            ? "Слушает выбранный аудиовход и автоматически ведёт живую расшифровку без кнопки «Отправить»."
-            : "Listens to the selected audio input and continuously transcribes the conversation without a Send button."}</p>
+            ? "Непрерывно слушает выбранный аудиовход. OpenAI Realtime определяет границы реплик по паузам и возвращает готовые фразы без кнопки «Отправить»."
+            : "Continuously listens to the selected audio input. OpenAI Realtime detects speech turns and returns complete phrases without a Send button."}</p>
         </div>
         <div className={`mentor-listening-pill ${isListening ? "active" : ""}`}>
           <span />{statusLabel}
@@ -175,7 +168,7 @@ export function MentorApp() {
         <article className="mentor-panel mentor-transcript-panel">
           <div className="mentor-panel-title">
             <div>
-              <span>{language === "ru" ? "ЖИВОЙ ДИАЛОГ" : "LIVE TRANSCRIPT"}</span>
+              <span>{language === "ru" ? "ЖИВОЙ ДИАЛОГ · REALTIME VAD" : "LIVE TRANSCRIPT · REALTIME VAD"}</span>
               <h2>{language === "ru" ? "Что сейчас звучит" : "What is being said"}</h2>
             </div>
             <div className="mentor-counter">{entries.length}</div>
@@ -187,8 +180,8 @@ export function MentorApp() {
                 <Mic size={28} />
                 <strong>{language === "ru" ? "Диалог появится здесь" : "Transcript will appear here"}</strong>
                 <span>{language === "ru"
-                  ? "Выбери CABLE Output (VB-Audio Virtual Cable), нажми «Старт» и включи YouTube или созвон."
-                  : "Choose CABLE Output (VB-Audio Virtual Cable), click Start, then play YouTube or join a call."}</span>
+                  ? "Выбери CABLE Output (VB-Audio Virtual Cable), нажми «Старт» и включи YouTube или созвон. Реплика появится после короткой паузы в речи."
+                  : "Choose CABLE Output (VB-Audio Virtual Cable), click Start, then play YouTube or join a call. A turn appears after a short speech pause."}</span>
               </div>
             ) : entries.map((entry) => (
               <div className="mentor-transcript-entry" key={entry.id}>
@@ -199,12 +192,13 @@ export function MentorApp() {
           </div>
 
           <footer className="mentor-diagnostics">
-            <span>{language === "ru" ? "Очередь" : "Queue"}: <strong>{transcription.diagnostics.pendingChunks}</strong></span>
-            <span>{language === "ru" ? "Обработано" : "Processed"}: <strong>{transcription.diagnostics.processedChunks}</strong></span>
-            <span>{language === "ru" ? "Пропущено" : "Dropped"}: <strong>{transcription.diagnostics.droppedChunks}</strong></span>
-            {transcription.diagnostics.lastResponseMs !== undefined
-              ? <span>STT: <strong>{transcription.diagnostics.lastResponseMs} ms</strong></span>
+            <span>{language === "ru" ? "Реплик" : "Turns"}: <strong>{realtime.diagnostics.completedTurns}</strong></span>
+            <span>VAD start: <strong>{realtime.diagnostics.speechStarts}</strong></span>
+            <span>VAD stop: <strong>{realtime.diagnostics.speechStops}</strong></span>
+            {realtime.diagnostics.lastTranscriptMs !== undefined
+              ? <span>{language === "ru" ? "После паузы" : "After pause"}: <strong>{realtime.diagnostics.lastTranscriptMs} ms</strong></span>
               : null}
+            <span>WebRTC: <strong>{realtime.diagnostics.connectionState}</strong></span>
           </footer>
         </article>
 
@@ -213,24 +207,24 @@ export function MentorApp() {
             <div className="mentor-answer-kicker">⚡ {language === "ru" ? "БЫСТРО" : "QUICK"}</div>
             <h2>{language === "ru" ? "Краткий ответ" : "Quick answer"}</h2>
             <p className="mentor-answer-placeholder">{language === "ru"
-              ? "На следующем этапе сюда подключим мгновенный локальный ответ или короткий GPT-ответ. Распознавание при этом продолжит работать."
-              : "Next we will connect instant local knowledge or a short GPT response here while transcription continues."}</p>
+              ? "Следующим шагом сюда подключим мгновенный локальный ответ или короткий GPT-ответ. Realtime-распознавание продолжит слушать параллельно."
+              : "Next we will connect instant local knowledge or a short GPT response while Realtime transcription keeps listening in parallel."}</p>
           </article>
 
           <article className="mentor-panel mentor-answer-panel mentor-detail-panel">
             <div className="mentor-answer-kicker">{language === "ru" ? "ПОДРОБНЕЕ" : "DETAIL"}</div>
             <h2>{language === "ru" ? "Развёрнутое объяснение" : "Detailed explanation"}</h2>
             <p className="mentor-answer-placeholder">{language === "ru"
-              ? "Здесь будет второй независимый ответ: больше контекста, примеры и объяснение терминов. Он не будет блокировать следующий вопрос."
-              : "A second independent answer will appear here with more context, examples, and terminology without blocking the next question."}</p>
+              ? "Здесь будет второй независимый ответ: больше контекста, примеры и объяснение терминов. Он не будет блокировать следующую реплику."
+              : "A second independent answer will appear here with more context, examples, and terminology without blocking the next turn."}</p>
           </article>
         </div>
       </section>
 
       <div className="mentor-prototype-note">
         {language === "ru"
-          ? "Этап 1: пока используется существующий 4-секундный аудиофрагмент, но теперь фрагменты идут через FIFO-очередь и не выбрасываются, пока предыдущая транскрипция обрабатывается. После проверки перейдём на настоящий streaming/realtime STT."
-          : "Stage 1: the existing 4-second audio chunks are still used, but they now pass through a FIFO queue instead of being discarded while a previous transcription is running. Realtime streaming STT comes next."}
+          ? "Этап 2: 4-секундная нарезка отключена. Аудиотрек CABLE Output идёт в OpenAI по WebRTC непрерывно. Server VAD завершает реплику после примерно 800 мс тишины, а технический prompt помогает сохранять названия продуктов, протоколов и команд."
+          : "Stage 2: fixed 4-second slicing is gone. The CABLE Output audio track streams continuously to OpenAI over WebRTC. Server VAD closes a turn after about 800 ms of silence, with a technical prompt guiding terminology."}
       </div>
     </main>
   );
@@ -258,18 +252,22 @@ function getSelectedDeviceLabel(devices: MediaDeviceInfo[], selectedDeviceId: st
   return selected?.label || (language === "ru" ? "Выбрано сохранённое устройство" : "Using saved device");
 }
 
-function getMentorStatusLabel(
-  recorderStatus: ReturnType<typeof useMicrophoneRecorder>["status"],
-  transcriptionStatus: ReturnType<typeof useMentorTranscriptionQueue>["status"],
-  language: AppLanguage
-): string {
-  if (recorderStatus === "requesting_permission") return language === "ru" ? "Запрашиваю доступ..." : "Requesting access...";
-  if (recorderStatus === "permission_denied") return language === "ru" ? "Доступ запрещён" : "Permission denied";
-  if (recorderStatus === "device_unavailable") return language === "ru" ? "Устройство недоступно" : "Device unavailable";
-  if (recorderStatus === "error" || transcriptionStatus === "error") return language === "ru" ? "Ошибка" : "Error";
-  if (transcriptionStatus === "missing_api_key") return language === "ru" ? "Нужен API-ключ" : "API key required";
-  if (recorderStatus === "recording" && transcriptionStatus === "transcribing") return language === "ru" ? "Слушаю · распознаю" : "Listening · transcribing";
-  if (recorderStatus === "recording") return language === "ru" ? "Слушаю" : "Listening";
+function isRealtimeActive(status: MentorRealtimeStatus): boolean {
+  return status === "requesting_device"
+    || status === "connecting"
+    || status === "listening"
+    || status === "speech_detected"
+    || status === "transcribing";
+}
+
+function getMentorStatusLabel(status: MentorRealtimeStatus, language: AppLanguage): string {
+  if (status === "requesting_device") return language === "ru" ? "Открываю аудиовход..." : "Opening audio input...";
+  if (status === "connecting") return language === "ru" ? "Подключаю Realtime..." : "Connecting Realtime...";
+  if (status === "listening") return language === "ru" ? "Слушаю" : "Listening";
+  if (status === "speech_detected") return language === "ru" ? "Слышу речь" : "Speech detected";
+  if (status === "transcribing") return language === "ru" ? "Завершаю реплику..." : "Finalizing turn...";
+  if (status === "missing_api_key") return language === "ru" ? "Нужен API-ключ" : "API key required";
+  if (status === "error") return language === "ru" ? "Ошибка" : "Error";
   return language === "ru" ? "Остановлено" : "Stopped";
 }
 
