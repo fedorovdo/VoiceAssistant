@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mic, Play, RefreshCw, Square, Trash2 } from "lucide-react";
 import type { AppLanguage } from "@voiceassistant/shared";
 import { useMentorRealtimeTranscription } from "./speech/useMentorRealtimeTranscription.js";
@@ -7,9 +7,11 @@ import "./mentor.css";
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://127.0.0.1:8787";
 const settingsStorageKey = "voiceassistant.settings";
+const mentorSkipToken = "[[SKIP]]";
 
 interface StoredSettings {
   apiKey?: string;
+  model?: string;
   answerLanguage?: AppLanguage;
   audioInputDeviceId?: string;
 }
@@ -20,30 +22,110 @@ interface MentorTranscriptEntry {
   receivedAt: number;
 }
 
+type MentorAnswerStatus = "idle" | "loading" | "ready" | "skipped" | "error";
+
+interface AssistantApiResponse {
+  answer?: string;
+  error?: string;
+}
+
 export function MentorApp() {
   const storedSettings = useMemo(readStoredSettings, []);
   const [apiKey] = useState(storedSettings.apiKey ?? "");
+  const [model] = useState(storedSettings.model ?? "gpt-4.1-mini");
   const [language] = useState<AppLanguage>(storedSettings.answerLanguage === "en" ? "en" : "ru");
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState(storedSettings.audioInputDeviceId ?? "");
   const [entries, setEntries] = useState<MentorTranscriptEntry[]>([]);
+  const entriesRef = useRef<MentorTranscriptEntry[]>([]);
+  const [partialTranscript, setPartialTranscript] = useState("");
   const [deviceMessage, setDeviceMessage] = useState("");
   const [error, setError] = useState("");
+  const [quickAnswer, setQuickAnswer] = useState("");
+  const [detailAnswer, setDetailAnswer] = useState("");
+  const [quickStatus, setQuickStatus] = useState<MentorAnswerStatus>("idle");
+  const [detailStatus, setDetailStatus] = useState<MentorAnswerStatus>("idle");
+  const answerGenerationRef = useRef(0);
+
+  const requestMentorAnswers = useCallback((latestText: string, previousEntries: MentorTranscriptEntry[]) => {
+    const recentContext = previousEntries.slice(-5).map((entry) => entry.text);
+    if (!looksLikeMentorPrompt(latestText, recentContext)) {
+      return;
+    }
+
+    const generation = ++answerGenerationRef.current;
+    setQuickStatus("loading");
+    setDetailStatus("loading");
+    setQuickAnswer("");
+    setDetailAnswer("");
+
+    void requestMentorAnswer({
+      apiKey,
+      model,
+      language,
+      latestText,
+      recentContext,
+      mode: "short"
+    }).then((answer) => {
+      if (generation !== answerGenerationRef.current) return;
+      if (isSkipAnswer(answer)) {
+        setQuickStatus("skipped");
+        setQuickAnswer("");
+        return;
+      }
+      setQuickAnswer(answer);
+      setQuickStatus("ready");
+    }).catch((requestError) => {
+      if (generation !== answerGenerationRef.current) return;
+      setQuickStatus("error");
+      setQuickAnswer(toVisibleError(requestError, language));
+    });
+
+    void requestMentorAnswer({
+      apiKey,
+      model,
+      language,
+      latestText,
+      recentContext,
+      mode: "learning"
+    }).then((answer) => {
+      if (generation !== answerGenerationRef.current) return;
+      if (isSkipAnswer(answer)) {
+        setDetailStatus("skipped");
+        setDetailAnswer("");
+        return;
+      }
+      setDetailAnswer(answer);
+      setDetailStatus("ready");
+    }).catch((requestError) => {
+      if (generation !== answerGenerationRef.current) return;
+      setDetailStatus("error");
+      setDetailAnswer(toVisibleError(requestError, language));
+    });
+  }, [apiKey, language, model]);
 
   const appendTranscript = useCallback((text: string) => {
     const cleaned = text.trim();
     if (!cleaned) return;
-    setEntries((current) => [
-      ...current,
-      { id: Date.now() + current.length, text: cleaned, receivedAt: Date.now() }
-    ].slice(-200));
-  }, []);
+
+    const previousEntries = entriesRef.current;
+    const nextEntries = [
+      ...previousEntries,
+      { id: Date.now() + previousEntries.length, text: cleaned, receivedAt: Date.now() }
+    ].slice(-200);
+
+    entriesRef.current = nextEntries;
+    setEntries(nextEntries);
+    setPartialTranscript("");
+    requestMentorAnswers(cleaned, previousEntries);
+  }, [requestMentorAnswers]);
 
   const realtime = useMentorRealtimeTranscription({
     backendUrl,
     apiKey,
     language,
     onTranscript: appendTranscript,
+    onPartialTranscript: setPartialTranscript,
     onError: setError
   });
 
@@ -85,6 +167,18 @@ export function MentorApp() {
 
   function stopMentor() {
     realtime.stop();
+    setPartialTranscript("");
+  }
+
+  function clearMentor() {
+    answerGenerationRef.current += 1;
+    entriesRef.current = [];
+    setEntries([]);
+    setPartialTranscript("");
+    setQuickAnswer("");
+    setDetailAnswer("");
+    setQuickStatus("idle");
+    setDetailStatus("idle");
   }
 
   async function requestPermissionAndRefresh() {
@@ -107,6 +201,7 @@ export function MentorApp() {
 
   const selectedDeviceLabel = getSelectedDeviceLabel(audioDevices, selectedDeviceId, language);
   const statusLabel = getMentorStatusLabel(realtime.status, language);
+  const hasTranscript = entries.length > 0 || partialTranscript.trim().length > 0;
 
   return (
     <main className="mentor-shell">
@@ -115,8 +210,8 @@ export function MentorApp() {
           <div className="mentor-eyebrow">MENTOR MODE · REALTIME PROTOTYPE</div>
           <h1>{language === "ru" ? "Технический собеседник" : "Technical Mentor"}</h1>
           <p>{language === "ru"
-            ? "Непрерывно слушает выбранный аудиовход. OpenAI Realtime определяет границы реплик по паузам и возвращает готовые фразы без кнопки «Отправить»."
-            : "Continuously listens to the selected audio input. OpenAI Realtime detects speech turns and returns complete phrases without a Send button."}</p>
+            ? "Показывает речь с минимальной задержкой, держит последние реплики как контекст и параллельно готовит краткий и подробный технический ответ."
+            : "Shows speech with low latency, keeps recent turns as context, and prepares quick and detailed technical answers in parallel."}</p>
         </div>
         <div className={`mentor-listening-pill ${isListening ? "active" : ""}`}>
           <span />{statusLabel}
@@ -155,7 +250,7 @@ export function MentorApp() {
           <button type="button" className="mentor-stop" onClick={stopMentor} disabled={!isListening}>
             <Square size={17} />{language === "ru" ? "Стоп" : "Stop"}
           </button>
-          <button type="button" className="mentor-secondary" onClick={() => setEntries([])} disabled={entries.length === 0}>
+          <button type="button" className="mentor-secondary" onClick={clearMentor} disabled={!hasTranscript && !quickAnswer && !detailAnswer}>
             <Trash2 size={17} />{language === "ru" ? "Очистить" : "Clear"}
           </button>
         </div>
@@ -168,27 +263,37 @@ export function MentorApp() {
         <article className="mentor-panel mentor-transcript-panel">
           <div className="mentor-panel-title">
             <div>
-              <span>{language === "ru" ? "ЖИВОЙ ДИАЛОГ · REALTIME VAD" : "LIVE TRANSCRIPT · REALTIME VAD"}</span>
+              <span>{language === "ru" ? "ЖИВОЙ ДИАЛОГ · FAST VAD" : "LIVE TRANSCRIPT · FAST VAD"}</span>
               <h2>{language === "ru" ? "Что сейчас звучит" : "What is being said"}</h2>
             </div>
             <div className="mentor-counter">{entries.length}</div>
           </div>
 
           <div className="mentor-transcript" aria-live="polite">
-            {entries.length === 0 ? (
+            {!hasTranscript ? (
               <div className="mentor-empty">
                 <Mic size={28} />
                 <strong>{language === "ru" ? "Диалог появится здесь" : "Transcript will appear here"}</strong>
                 <span>{language === "ru"
-                  ? "Выбери CABLE Output (VB-Audio Virtual Cable), нажми «Старт» и включи YouTube или созвон. Реплика появится после короткой паузы в речи."
-                  : "Choose CABLE Output (VB-Audio Virtual Cable), click Start, then play YouTube or join a call. A turn appears after a short speech pause."}</span>
+                  ? "Выбери CABLE Output, нажми «Старт» и включи YouTube или созвон. Короткие паузы быстро завершают фрагменты, а соседние фразы сохраняются как контекст."
+                  : "Choose CABLE Output, click Start, then play YouTube or join a call. Short pauses close fragments quickly while nearby turns remain available as context."}</span>
               </div>
-            ) : entries.map((entry) => (
-              <div className="mentor-transcript-entry" key={entry.id}>
-                <time>{formatTime(entry.receivedAt)}</time>
-                <p>{entry.text}</p>
-              </div>
-            ))}
+            ) : (
+              <>
+                {entries.map((entry) => (
+                  <div className="mentor-transcript-entry" key={entry.id}>
+                    <time>{formatTime(entry.receivedAt)}</time>
+                    <p>{entry.text}</p>
+                  </div>
+                ))}
+                {partialTranscript.trim() ? (
+                  <div className="mentor-transcript-entry" key="partial">
+                    <time>{language === "ru" ? "сейчас" : "now"}</time>
+                    <p style={{ opacity: 0.72 }}><em>{partialTranscript} ▌</em></p>
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
 
           <footer className="mentor-diagnostics">
@@ -206,28 +311,152 @@ export function MentorApp() {
           <article className="mentor-panel mentor-answer-panel mentor-quick-panel">
             <div className="mentor-answer-kicker">⚡ {language === "ru" ? "БЫСТРО" : "QUICK"}</div>
             <h2>{language === "ru" ? "Краткий ответ" : "Quick answer"}</h2>
-            <p className="mentor-answer-placeholder">{language === "ru"
-              ? "Следующим шагом сюда подключим мгновенный локальный ответ или короткий GPT-ответ. Realtime-распознавание продолжит слушать параллельно."
-              : "Next we will connect instant local knowledge or a short GPT response while Realtime transcription keeps listening in parallel."}</p>
+            <p className="mentor-answer-placeholder">
+              {renderAnswerPanel({
+                status: quickStatus,
+                answer: quickAnswer,
+                language,
+                loadingRu: "Понял вопрос. Готовлю короткую подсказку…",
+                loadingEn: "Question detected. Preparing a quick hint…",
+                idleRu: "Здесь появится короткий ответ, когда в последних репликах будет распознан технический вопрос или просьба объяснить.",
+                idleEn: "A quick answer appears here when the recent context contains a technical question or request for explanation."
+              })}
+            </p>
           </article>
 
           <article className="mentor-panel mentor-answer-panel mentor-detail-panel">
             <div className="mentor-answer-kicker">{language === "ru" ? "ПОДРОБНЕЕ" : "DETAIL"}</div>
             <h2>{language === "ru" ? "Развёрнутое объяснение" : "Detailed explanation"}</h2>
-            <p className="mentor-answer-placeholder">{language === "ru"
-              ? "Здесь будет второй независимый ответ: больше контекста, примеры и объяснение терминов. Он не будет блокировать следующую реплику."
-              : "A second independent answer will appear here with more context, examples, and terminology without blocking the next turn."}</p>
+            <p className="mentor-answer-placeholder">
+              {renderAnswerPanel({
+                status: detailStatus,
+                answer: detailAnswer,
+                language,
+                loadingRu: "Параллельно собираю более полный ответ с контекстом и примером…",
+                loadingEn: "Building a fuller contextual answer in parallel…",
+                idleRu: "Подробный ответ запускается параллельно с кратким и не останавливает распознавание следующей речи.",
+                idleEn: "The detailed answer runs in parallel with the quick answer and does not stop transcription."
+              })}
+            </p>
           </article>
         </div>
       </section>
 
       <div className="mentor-prototype-note">
         {language === "ru"
-          ? "Этап 2: 4-секундная нарезка отключена. Аудиотрек CABLE Output идёт в OpenAI по WebRTC непрерывно. Server VAD завершает реплику после примерно 800 мс тишины, а технический prompt помогает сохранять названия продуктов, протоколов и команд."
-          : "Stage 2: fixed 4-second slicing is gone. The CABLE Output audio track streams continuously to OpenAI over WebRTC. Server VAD closes a turn after about 800 ms of silence, with a technical prompt guiding terminology."}
+          ? `Этап 3: Realtime использует быстрый Server VAD с паузой около 300 мс. Готовые фрагменты складываются в короткое окно контекста. При обнаружении вопроса одновременно запускаются два ответа через модель ${model}: быстрый и учебный.`
+          : `Stage 3: Realtime uses fast Server VAD with about 300 ms of silence. Completed fragments form a short context window. When a question is detected, two answers run in parallel through ${model}: quick and learning.`}
       </div>
     </main>
   );
+}
+
+async function requestMentorAnswer(options: {
+  apiKey: string;
+  model: string;
+  language: AppLanguage;
+  latestText: string;
+  recentContext: string[];
+  mode: "short" | "learning";
+}): Promise<string> {
+  const prompt = buildMentorAnswerPrompt(options.latestText, options.recentContext, options.language);
+  const response = await fetch(`${backendUrl}/api/assistant/answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: prompt,
+      mode: options.mode,
+      workMode: "manual",
+      answerLanguage: options.language,
+      model: options.model,
+      apiKey: options.apiKey
+    })
+  });
+
+  const payload = await response.json() as AssistantApiResponse;
+  if (!response.ok || !payload.answer) {
+    throw new Error(payload.error || `Assistant request failed with status ${response.status}.`);
+  }
+
+  return payload.answer.trim();
+}
+
+function buildMentorAnswerPrompt(latestText: string, recentContext: string[], language: AppLanguage): string {
+  const context = recentContext.length > 0
+    ? recentContext.map((text, index) => `${index + 1}. ${trimContext(text)}`).join("\n")
+    : language === "ru" ? "нет предыдущего контекста" : "no previous context";
+
+  if (language === "en") {
+    return [
+      "You are the silent technical mentor following a live conversation.",
+      "Use the recent transcript to reconstruct a question if the VAD split it across neighboring fragments.",
+      "Answer the latest unresolved technical question, request for explanation, troubleshooting task, or interview question.",
+      `If there is nothing that should be answered now, return exactly ${mentorSkipToken} and nothing else.`,
+      "Do not discuss the transcription process. Prefer practical, interview-ready technical wording.",
+      "RECENT CONTEXT:",
+      context,
+      "LATEST FRAGMENT:",
+      trimContext(latestText)
+    ].join("\n");
+  }
+
+  return [
+    "Ты тихий технический ментор, который следит за живым разговором.",
+    "Используй последние реплики, чтобы восстановить вопрос, если быстрый VAD разрезал его на соседние фрагменты.",
+    "Ответь на последний незакрытый технический вопрос, просьбу объяснить, задачу по диагностике или вопрос собеседования.",
+    `Если сейчас отвечать не на что, верни ровно ${mentorSkipToken} и больше ничего.`,
+    "Не обсуждай процесс транскрипции. Ответ должен быть практичным и пригодным для собеседования или рабочего разговора.",
+    "ПРЕДЫДУЩИЙ КОНТЕКСТ:",
+    context,
+    "ПОСЛЕДНИЙ ФРАГМЕНТ:",
+    trimContext(latestText)
+  ].join("\n");
+}
+
+function looksLikeMentorPrompt(latestText: string, recentContext: string[]): boolean {
+  const combined = [...recentContext.slice(-2), latestText].join(" ").toLowerCase();
+  const questionCues = [
+    "?", "что такое", "что знаете", "что вы знаете", "как ", "каким ", "какая ", "какие ",
+    "почему", "зачем", "для чего", "чем отличается", "расскаж", "объясн", "опиш", "назов",
+    "покажи", "как бы вы", "что будете", "что произойдет", "что произойдёт", "можно ли",
+    "what ", "how ", "why ", "explain", "tell me", "describe", "difference between"
+  ];
+
+  if (questionCues.some((cue) => combined.includes(cue))) {
+    return true;
+  }
+
+  const shortTechnicalPhrase = latestText.trim().split(/\s+/).length <= 8;
+  return shortTechnicalPhrase && /\b(proxmox|pbs|linux|docker|kubernetes|zabbix|dns|dhcp|vlan|gpo|samba|systemd|selinux|tcp|udp|osi|active directory|powershell|bash|chmod|chown|acl)\b/i.test(latestText);
+}
+
+function renderAnswerPanel(options: {
+  status: MentorAnswerStatus;
+  answer: string;
+  language: AppLanguage;
+  loadingRu: string;
+  loadingEn: string;
+  idleRu: string;
+  idleEn: string;
+}): string {
+  if (options.status === "loading") return options.language === "ru" ? options.loadingRu : options.loadingEn;
+  if (options.status === "ready" || options.status === "error") return options.answer;
+  if (options.status === "skipped") return options.language === "ru" ? "Слушаю дальше. Отдельного вопроса для ответа пока нет." : "Listening on. No separate question needs an answer yet.";
+  return options.language === "ru" ? options.idleRu : options.idleEn;
+}
+
+function isSkipAnswer(answer: string): boolean {
+  return answer.replace(/\s+/g, " ").trim().toUpperCase().includes(mentorSkipToken);
+}
+
+function trimContext(text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return normalized.length > 500 ? `${normalized.slice(0, 500)}…` : normalized;
+}
+
+function toVisibleError(error: unknown, language: AppLanguage): string {
+  if (error instanceof Error && error.message) return error.message;
+  return language === "ru" ? "Не удалось получить ответ." : "Could not get an answer.";
 }
 
 function readStoredSettings(): StoredSettings {
@@ -265,7 +494,7 @@ function getMentorStatusLabel(status: MentorRealtimeStatus, language: AppLanguag
   if (status === "connecting") return language === "ru" ? "Подключаю Realtime..." : "Connecting Realtime...";
   if (status === "listening") return language === "ru" ? "Слушаю" : "Listening";
   if (status === "speech_detected") return language === "ru" ? "Слышу речь" : "Speech detected";
-  if (status === "transcribing") return language === "ru" ? "Завершаю реплику..." : "Finalizing turn...";
+  if (status === "transcribing") return language === "ru" ? "Распознаю..." : "Transcribing...";
   if (status === "missing_api_key") return language === "ru" ? "Нужен API-ключ" : "API key required";
   if (status === "error") return language === "ru" ? "Ошибка" : "Error";
   return language === "ru" ? "Остановлено" : "Stopped";
