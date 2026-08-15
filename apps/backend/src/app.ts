@@ -138,8 +138,10 @@ export function buildApp() {
               prompt: mentorTranscriptionPrompt
             },
             turn_detection: {
-              type: "semantic_vad",
-              eagerness: "high",
+              type: "server_vad",
+              threshold: 0.45,
+              prefix_padding_ms: 250,
+              silence_duration_ms: 300,
               create_response: false,
               interrupt_response: false
             }
