@@ -38,6 +38,8 @@ export function MentorApp() {
   const [selectedDeviceId, setSelectedDeviceId] = useState(storedSettings.audioInputDeviceId ?? "");
   const [entries, setEntries] = useState<MentorTranscriptEntry[]>([]);
   const entriesRef = useRef<MentorTranscriptEntry[]>([]);
+  const transcriptScrollRef = useRef<HTMLDivElement>(null);
+  const autoFollowTranscriptRef = useRef(true);
   const [partialTranscript, setPartialTranscript] = useState("");
   const [deviceMessage, setDeviceMessage] = useState("");
   const [error, setError] = useState("");
@@ -153,6 +155,12 @@ export function MentorApp() {
     void refreshDevices();
   }, [refreshDevices]);
 
+  useEffect(() => {
+    const node = transcriptScrollRef.current;
+    if (!node || !autoFollowTranscriptRef.current) return;
+    node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+  }, [entries]);
+
   async function startMentor() {
     setError("");
     if (!apiKey.trim()) {
@@ -179,6 +187,7 @@ export function MentorApp() {
     setDetailAnswer("");
     setQuickStatus("idle");
     setDetailStatus("idle");
+    autoFollowTranscriptRef.current = true;
   }
 
   async function requestPermissionAndRefresh() {
@@ -199,26 +208,37 @@ export function MentorApp() {
     persistAudioDevice(deviceId);
   }
 
+  function handleTranscriptScroll() {
+    const node = transcriptScrollRef.current;
+    if (!node) return;
+    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+    autoFollowTranscriptRef.current = distanceFromBottom < 70;
+  }
+
   const selectedDeviceLabel = getSelectedDeviceLabel(audioDevices, selectedDeviceId, language);
   const statusLabel = getMentorStatusLabel(realtime.status, language);
   const hasTranscript = entries.length > 0 || partialTranscript.trim().length > 0;
+  const activeTranscript = partialTranscript.trim()
+    || (isListening
+      ? language === "ru" ? "Слушаю следующую реплику…" : "Listening for the next turn…"
+      : language === "ru" ? "Распознавание остановлено." : "Transcription stopped.");
 
   return (
     <main className="mentor-shell">
-      <header className="mentor-header">
+      <header className="mentor-header mentor-header-compact">
         <div>
-          <div className="mentor-eyebrow">MENTOR MODE · REALTIME PROTOTYPE</div>
+          <div className="mentor-eyebrow">MENTOR MODE · REALTIME</div>
           <h1>{language === "ru" ? "Технический собеседник" : "Technical Mentor"}</h1>
           <p>{language === "ru"
-            ? "Показывает речь с минимальной задержкой, держит последние реплики как контекст и параллельно готовит краткий и подробный технический ответ."
-            : "Shows speech with low latency, keeps recent turns as context, and prepares quick and detailed technical answers in parallel."}</p>
+            ? "Живой технический контекст, быстрый ответ и подробное объяснение."
+            : "Live technical context, a quick answer, and a detailed explanation."}</p>
         </div>
         <div className={`mentor-listening-pill ${isListening ? "active" : ""}`}>
           <span />{statusLabel}
         </div>
       </header>
 
-      <section className="mentor-device-bar">
+      <section className="mentor-device-bar mentor-device-bar-compact">
         <div className="mentor-device-select">
           <label htmlFor="mentor-audio-device">{language === "ru" ? "Источник звука" : "Audio source"}</label>
           <select
@@ -242,7 +262,7 @@ export function MentorApp() {
 
         <div className="mentor-controls">
           <button type="button" className="mentor-secondary" onClick={() => void requestPermissionAndRefresh()} disabled={isListening}>
-            <RefreshCw size={17} />{language === "ru" ? "Обновить устройства" : "Refresh devices"}
+            <RefreshCw size={17} />{language === "ru" ? "Обновить" : "Refresh"}
           </button>
           <button type="button" className="mentor-primary" onClick={() => void startMentor()} disabled={isListening}>
             <Play size={18} />{language === "ru" ? "Старт" : "Start"}
@@ -259,8 +279,8 @@ export function MentorApp() {
       {deviceMessage ? <div className="mentor-device-message">{deviceMessage}</div> : null}
       {error ? <div className="mentor-error">{error}</div> : null}
 
-      <section className="mentor-grid">
-        <article className="mentor-panel mentor-transcript-panel">
+      <section className="mentor-stack">
+        <article className="mentor-panel mentor-transcript-panel mentor-resizable-panel">
           <div className="mentor-panel-title">
             <div>
               <span>{language === "ru" ? "ЖИВОЙ ДИАЛОГ · FAST VAD" : "LIVE TRANSCRIPT · FAST VAD"}</span>
@@ -269,83 +289,91 @@ export function MentorApp() {
             <div className="mentor-counter">{entries.length}</div>
           </div>
 
-          <div className="mentor-transcript" aria-live="polite">
-            {!hasTranscript ? (
-              <div className="mentor-empty">
-                <Mic size={28} />
+          <div
+            ref={transcriptScrollRef}
+            className="mentor-transcript"
+            aria-live="polite"
+            onScroll={handleTranscriptScroll}
+          >
+            {entries.length === 0 ? (
+              <div className="mentor-empty mentor-empty-compact">
+                <Mic size={24} />
                 <strong>{language === "ru" ? "Диалог появится здесь" : "Transcript will appear here"}</strong>
                 <span>{language === "ru"
-                  ? "Выбери CABLE Output, нажми «Старт» и включи YouTube или созвон. Короткие паузы быстро завершают фрагменты, а соседние фразы сохраняются как контекст."
-                  : "Choose CABLE Output, click Start, then play YouTube or join a call. Short pauses close fragments quickly while nearby turns remain available as context."}</span>
+                  ? "Выбери CABLE Output, нажми «Старт» и включи YouTube или созвон."
+                  : "Choose CABLE Output, click Start, then play YouTube or join a call."}</span>
               </div>
-            ) : (
-              <>
-                {entries.map((entry) => (
-                  <div className="mentor-transcript-entry" key={entry.id}>
-                    <time>{formatTime(entry.receivedAt)}</time>
-                    <p>{entry.text}</p>
-                  </div>
-                ))}
-                {partialTranscript.trim() ? (
-                  <div className="mentor-transcript-entry" key="partial">
-                    <time>{language === "ru" ? "сейчас" : "now"}</time>
-                    <p style={{ opacity: 0.72 }}><em>{partialTranscript} ▌</em></p>
-                  </div>
-                ) : null}
-              </>
-            )}
+            ) : entries.map((entry) => (
+              <div className="mentor-transcript-entry" key={entry.id}>
+                <time>{formatTime(entry.receivedAt)}</time>
+                <p>{entry.text}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className={`mentor-live-line ${partialTranscript.trim() ? "active" : ""}`} aria-live="polite">
+            <span>{language === "ru" ? "СЕЙЧАС" : "NOW"}</span>
+            <p>{activeTranscript}{partialTranscript.trim() ? " ▌" : ""}</p>
           </div>
 
           <footer className="mentor-diagnostics">
             <span>{language === "ru" ? "Реплик" : "Turns"}: <strong>{realtime.diagnostics.completedTurns}</strong></span>
-            <span>VAD start: <strong>{realtime.diagnostics.speechStarts}</strong></span>
-            <span>VAD stop: <strong>{realtime.diagnostics.speechStops}</strong></span>
+            <span>VAD: <strong>{realtime.diagnostics.speechStarts}/{realtime.diagnostics.speechStops}</strong></span>
             {realtime.diagnostics.lastTranscriptMs !== undefined
               ? <span>{language === "ru" ? "После паузы" : "After pause"}: <strong>{realtime.diagnostics.lastTranscriptMs} ms</strong></span>
               : null}
             <span>WebRTC: <strong>{realtime.diagnostics.connectionState}</strong></span>
+            <span className="mentor-resize-label">↕ {language === "ru" ? "размер меняется мышкой" : "drag to resize"}</span>
           </footer>
         </article>
 
-        <div className="mentor-answer-stack">
-          <article className="mentor-panel mentor-answer-panel mentor-quick-panel">
-            <div className="mentor-answer-kicker">⚡ {language === "ru" ? "БЫСТРО" : "QUICK"}</div>
-            <h2>{language === "ru" ? "Краткий ответ" : "Quick answer"}</h2>
-            <p className="mentor-answer-placeholder">
-              {renderAnswerPanel({
-                status: quickStatus,
-                answer: quickAnswer,
-                language,
-                loadingRu: "Понял вопрос. Готовлю короткую подсказку…",
-                loadingEn: "Question detected. Preparing a quick hint…",
-                idleRu: "Здесь появится короткий ответ, когда в последних репликах будет распознан технический вопрос или просьба объяснить.",
-                idleEn: "A quick answer appears here when the recent context contains a technical question or request for explanation."
-              })}
-            </p>
-          </article>
+        <article className="mentor-panel mentor-answer-panel mentor-quick-panel mentor-resizable-panel">
+          <div className="mentor-answer-heading">
+            <div>
+              <div className="mentor-answer-kicker">⚡ {language === "ru" ? "БЫСТРО" : "QUICK"}</div>
+              <h2>{language === "ru" ? "Краткий ответ" : "Quick answer"}</h2>
+            </div>
+            <span className="mentor-resize-label">↕</span>
+          </div>
+          <div className="mentor-answer-placeholder">
+            {renderAnswerPanel({
+              status: quickStatus,
+              answer: quickAnswer,
+              language,
+              loadingRu: "Понял вопрос. Готовлю короткую подсказку…",
+              loadingEn: "Question detected. Preparing a quick hint…",
+              idleRu: "Краткий ответ появится здесь, когда в разговоре будет распознан технический вопрос.",
+              idleEn: "A quick answer appears here when the conversation contains a technical question."
+            })}
+          </div>
+        </article>
 
-          <article className="mentor-panel mentor-answer-panel mentor-detail-panel">
-            <div className="mentor-answer-kicker">{language === "ru" ? "ПОДРОБНЕЕ" : "DETAIL"}</div>
-            <h2>{language === "ru" ? "Развёрнутое объяснение" : "Detailed explanation"}</h2>
-            <p className="mentor-answer-placeholder">
-              {renderAnswerPanel({
-                status: detailStatus,
-                answer: detailAnswer,
-                language,
-                loadingRu: "Параллельно собираю более полный ответ с контекстом и примером…",
-                loadingEn: "Building a fuller contextual answer in parallel…",
-                idleRu: "Подробный ответ запускается параллельно с кратким и не останавливает распознавание следующей речи.",
-                idleEn: "The detailed answer runs in parallel with the quick answer and does not stop transcription."
-              })}
-            </p>
-          </article>
-        </div>
+        <article className="mentor-panel mentor-answer-panel mentor-detail-panel mentor-resizable-panel">
+          <div className="mentor-answer-heading">
+            <div>
+              <div className="mentor-answer-kicker">{language === "ru" ? "ПОДРОБНЕЕ" : "DETAIL"}</div>
+              <h2>{language === "ru" ? "Развёрнутое объяснение" : "Detailed explanation"}</h2>
+            </div>
+            <span className="mentor-resize-label">↕</span>
+          </div>
+          <div className="mentor-answer-placeholder">
+            {renderAnswerPanel({
+              status: detailStatus,
+              answer: detailAnswer,
+              language,
+              loadingRu: "Параллельно собираю более полный ответ с контекстом и примером…",
+              loadingEn: "Building a fuller contextual answer in parallel…",
+              idleRu: "Здесь будет подробное объяснение с контекстом, примерами и командами, когда они уместны.",
+              idleEn: "A detailed contextual explanation with examples and useful commands appears here."
+            })}
+          </div>
+        </article>
       </section>
 
-      <div className="mentor-prototype-note">
+      <div className="mentor-prototype-note mentor-prototype-note-compact">
         {language === "ru"
-          ? `Этап 3: Realtime использует быстрый Server VAD с паузой около 300 мс. Готовые фрагменты складываются в короткое окно контекста. При обнаружении вопроса одновременно запускаются два ответа через модель ${model}: быстрый и учебный.`
-          : `Stage 3: Realtime uses fast Server VAD with about 300 ms of silence. Completed fragments form a short context window. When a question is detected, two answers run in parallel through ${model}: quick and learning.`}
+          ? `Fast VAD ≈ 300 мс · контекст последних реплик · два параллельных ответа через ${model}.`
+          : `Fast VAD ≈ 300 ms · recent-turn context · two parallel answers through ${model}.`}
       </div>
     </main>
   );
