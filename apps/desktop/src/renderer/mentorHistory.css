@@ -1,0 +1,111 @@
+.mentor-shell-history {
+  padding-bottom: 96px;
+}
+
+.mentor-answer-history-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mentor-answer-history {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px 16px;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+
+.mentor-answer-empty {
+  padding: 10px 0 4px;
+  color: #6f7889;
+  line-height: 1.55;
+  font-size: calc(14px * var(--mentor-text-scale, 0.9));
+}
+
+.mentor-answer-item {
+  padding: 14px 0 16px;
+  border-top: 1px solid #e5e9f1;
+}
+
+.mentor-answer-item:first-child {
+  border-top: 0;
+}
+
+.mentor-answer-item.error {
+  color: #9c3d35;
+}
+
+.mentor-answer-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 7px;
+  color: #8b93a2;
+  font-size: calc(10px * var(--mentor-text-scale, 0.9));
+  font-variant-numeric: tabular-nums;
+}
+
+.mentor-answer-item-meta span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(70, 83, 112, 0.08);
+  color: #5c6678;
+  font-weight: 750;
+}
+
+.mentor-answer-question {
+  margin-bottom: 8px;
+  color: #273044;
+  font-size: calc(12px * var(--mentor-text-scale, 0.9));
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.mentor-answer-text {
+  color: #465063;
+  font-size: calc(15px * var(--mentor-text-scale, 0.9));
+  line-height: 1.62;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mentor-answer-item-footer {
+  margin-top: 8px;
+  color: #9aa2b0;
+  font-size: calc(9px * var(--mentor-text-scale, 0.9));
+}
+
+.mentor-answer-loading {
+  position: sticky;
+  bottom: 0;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #d8e2f5;
+  border-radius: 10px;
+  background: rgba(245, 248, 255, 0.96);
+  color: #5f6f91;
+  font-size: calc(11px * var(--mentor-text-scale, 0.9));
+  font-weight: 700;
+  backdrop-filter: blur(8px);
+}
+
+.mentor-quick-panel .mentor-answer-history {
+  background: linear-gradient(180deg, rgba(255,255,255,0), rgba(243,250,246,0.6));
+}
+
+.mentor-detail-panel .mentor-answer-history {
+  background: linear-gradient(180deg, rgba(255,255,255,0), rgba(248,249,252,0.7));
+}
+
+@media (max-width: 620px) {
+  .mentor-shell-history {
+    padding-bottom: 72px;
+  }
+
+  .mentor-answer-history {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
